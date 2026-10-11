@@ -56,7 +56,26 @@ function render(){
   $('contador').textContent=productos.length;
   $('lista').innerHTML=q?(arr.length?arr.map(p=>`<button class='suggestion' onclick='seleccionarProducto(${JSON.stringify(String(p.codigo))})'><span><b>${esc(p.nombre)}</b><small>${esc(p.codigo)} · Stock: ${Number(p.cantidad||0)}</small></span><strong>S/ ${Number(p.precio||0).toFixed(2)}</strong></button>`).join(''):`<p class='muted'>No se encontraron productos.</p>`):`<p class='muted'>Escriba un código o parte del nombre.</p>`;
 }
-$('buscar').oninput=render;
+// En Administración → Productos, un código exacto abre directamente la ficha.
+// La búsqueda parcial por nombre o código sigue mostrando sugerencias.
+let productoScanTimer=null;
+function buscarProductoAdministracion(){
+  clearTimeout(productoScanTimer);
+  const valor=$('buscar').value.trim();
+  const exacto=productos.find(p=>String(p.codigo).trim()===valor);
+  if(exacto){seleccionarProducto(exacto.codigo);return}
+  render();
+}
+$('buscar').addEventListener('input',buscarProductoAdministracion);
+$('buscar').addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return;
+  e.preventDefault();
+  const q=$('buscar').value.trim();
+  const exacto=productos.find(p=>String(p.codigo).trim()===q);
+  if(exacto){seleccionarProducto(exacto.codigo);return}
+  const arr=q?productos.filter(p=>normText(p.nombre).includes(normText(q))||normText(p.codigo).includes(normText(q))):[];
+  if(arr.length===1)seleccionarProducto(arr[0].codigo);
+});
 $('guardar').onclick=()=>{
   let original=$('editOriginalCodigo').value,codigo=$('codigo').value.trim(),nombre=$('nombre').value.trim();let precio=Number(($('precio').value||'0').replace(',','.')),cantidad=parseInt($('cantidad').value||'0',10);
   if(!original)return msg('Primero seleccione un producto.','err');if(!codigo||!nombre||!(precio>=0)||!(cantidad>=0))return msg('Revise los datos del producto.','err');
@@ -163,16 +182,28 @@ function buscarVentaInput(){
 }
 $('vCodigo').oninput=buscarVentaInput;
 $('vCodigo').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();const exacto=productoCodigoExacto($('vCodigo').value);if(exacto)return agregarProductoVenta(exacto);const arr=coincidenciasProducto($('vCodigo').value);if(arr.length===1)agregarProductoVenta(arr[0]);}};
+function prepararSiguienteConsulta(){
+  // El código permanece visible, pero queda seleccionado para que el
+  // siguiente escaneo USB lo reemplace sin tener que borrarlo a mano.
+  setTimeout(()=>{const campo=$('cCodigo');campo.focus();campo.select()},0);
+}
 function mostrarConsultaProducto(p){
   $('consultaResultado').innerHTML=`<div class='name'>${esc(p.nombre)}</div><div class='bigprice'>S/ ${Number(p.precio).toFixed(2)}</div><div>Stock: <b>${p.cantidad}</b></div>`;
-  $('cCodigo').value='';ocultarSugerencias($('cSugerencias'));setTimeout(()=>$('cCodigo').focus(),0);
+  $('cCodigo').value=String(p.codigo);
+  ocultarSugerencias($('cSugerencias'));
+  prepararSiguienteConsulta();
 }
 function buscarConsultaInput(){
-  const q=$('cCodigo').value.trim(); if(!q){ocultarSugerencias($('cSugerencias'));return}
-  const exacto=productoCodigoExacto(q); if(exacto){mostrarConsultaProducto(exacto);return}
+  const q=$('cCodigo').value.trim();
+  if(!q){ocultarSugerencias($('cSugerencias'));$('consultaResultado').textContent='Escanee un código o escriba parte del nombre.';return}
+  const exacto=productoCodigoExacto(q);
+  if(exacto){mostrarConsultaProducto(exacto);return}
+  // No mostrar los datos del artículo anterior mientras se busca otro.
+  $('consultaResultado').textContent='Buscando producto…';
   pintarSugerencias($('cSugerencias'),coincidenciasProducto(q),mostrarConsultaProducto);
 }
 $('cCodigo').oninput=buscarConsultaInput;
+$('cCodigo').onfocus=()=>{if($('cCodigo').value)$('cCodigo').select()};
 $('cCodigo').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();const exacto=productoCodigoExacto($('cCodigo').value);if(exacto)return mostrarConsultaProducto(exacto);const arr=coincidenciasProducto($('cCodigo').value);if(arr.length===1)return mostrarConsultaProducto(arr[0]);pintarSugerencias($('cSugerencias'),arr,mostrarConsultaProducto)}};
 
 
@@ -217,8 +248,11 @@ function procesarCodigoCamara(codigo){
   const input=$(scannerTarget); if(!input)return;
   cerrarScanner(); input.value=codigo;
   input.dispatchEvent(new Event('input',{bubbles:true}));
-  input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));
-  setTimeout(()=>input.focus(),150);
+  if(scannerTarget==='buscar'){
+    const p=productos.find(x=>String(x.codigo).trim()===codigo);
+    if(p)seleccionarProducto(p.codigo);else{render();$('msg').textContent='Código no registrado: '+codigo;$('msg').className='msg err'}
+  }else{input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));}
+  setTimeout(()=>{if(scannerTarget!=='buscar')input.focus()},150);
 }
 async function abrirScanner(target){
   if(scannerBusy)return; scannerBusy=true; scannerTarget=target;
@@ -238,7 +272,7 @@ async function abrirScanner(target){
       if(!scannerStream||video.readyState<2)return;
       try{const codes=await detector.detect(video);if(codes?.length)procesarCodigoCamara(codes[0].rawValue)}catch(e){}
     },220);
-  }catch(err){status.textContent='⚠️ '+(err?.message||'No se pudo abrir la cámara.');status.className='msg err'; if(scannerStream){scannerStream.getTracks().forEach(t=>t.stop());scannerStream=null} scannerBusy=false}
+  }catch(err){status.textContent='⚠️ '+(err?.message||'No se pudo abrir la cámara.');status.className='msg err'; if(scannerStream){scannerStream.getTracks().forEach(t=>t.stop());scannerStream=null} scannerBusy=false;setTimeout(()=>{if(!$('scannerModal').classList.contains('hidden')&&!scannerStream)cerrarScanner()},3500)}
 }
 document.querySelectorAll('[data-scan-target]').forEach(b=>b.addEventListener('click',()=>abrirScanner(b.dataset.scanTarget)));
 $('cerrarScanner')?.addEventListener('click',cerrarScanner);$('cancelarScanner')?.addEventListener('click',cerrarScanner);

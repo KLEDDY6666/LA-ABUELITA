@@ -1,0 +1,10 @@
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+const firebaseConfig = {apiKey:'AIzaSyDcx4GArTYoC_n9UGzZXhQNemd_I_2nlEI',authDomain:'la-abuelita-7e630.firebaseapp.com',projectId:'la-abuelita-7e630',storageBucket:'la-abuelita-7e630.firebasestorage.app',messagingSenderId:'280542897794',appId:'1:280542897794:web:267ee18b2aa9a8e00a769b'};
+const app=initializeApp(firebaseConfig);const auth=getAuth(app);const provider=new GoogleAuthProvider();
+const el=id=>document.getElementById(id), estado=el('firebaseEstado'), entrar=el('firebaseEntrar'), identidad=el('firebaseIdentidad'), salir=el('firebaseSalir');
+entrar.onclick=async()=>{entrar.disabled=true;estado.textContent='Abriendo acceso con Google…';try{await signInWithPopup(auth,provider)}catch(e){if(e.code==='auth/popup-blocked'||e.code==='auth/cancelled-popup-request'){await signInWithRedirect(auth,provider)}else{estado.textContent='No se pudo iniciar sesión: '+e.message;entrar.disabled=false}}};
+salir.onclick=()=>signOut(auth);
+el('firebaseCopiarUid').onclick=async()=>{const uid=el('firebaseUid').textContent;try{await navigator.clipboard.writeText(uid);el('firebaseCopiarUid').textContent='UID COPIADO'}catch(e){prompt('Copia este UID:',uid)}};
+onAuthStateChanged(auth,user=>{entrar.disabled=false;if(!user){estado.textContent='Ingresa con tu cuenta de Google para identificar tu usuario.';entrar.style.display='block';identidad.style.display='none';salir.style.display='none';return}estado.textContent='Cuenta de Google identificada correctamente.';entrar.style.display='none';identidad.style.display='block';salir.style.display='block';el('firebaseCorreo').textContent=user.email||'';el('firebaseUid').textContent=user.uid});
+getRedirectResult(auth).catch(e=>{estado.textContent='Error de inicio de sesión: '+e.message});
