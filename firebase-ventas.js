@@ -1,6 +1,6 @@
 import {auth,db} from './firebase-auth.js';
 import {doc,getDoc,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
-async function verificar(){const u=auth.currentUser;if(!u)throw Error('Inicie sesión');const a=await getDoc(doc(db,'usuarios',u.uid));if(!a.exists()||a.data().estado!=='activo'||a.data().rol!=='admin')throw Error('En esta etapa las ventas requieren una cuenta administradora');return u}
+async function verificar(){const u=auth.currentUser;if(!u)throw Error('Inicie sesión');const a=await getDoc(doc(db,'usuarios',u.uid));if(!a.exists()||a.data().estado!=='activo'||!['admin','usuario'].includes(a.data().rol))throw Error('La cuenta no tiene permiso para registrar ventas');return u}
 window.abuelitaVentasCloud={async registrar(v){
  const u=await verificar();if(!navigator.onLine)throw Error('Sin internet');
  if(!['EFECTIVO','YAPE'].includes(v.medio))throw Error('Medio no habilitado');
