@@ -101,7 +101,29 @@ function normalizarCarritoPorStock(){let cambio=false;carrito=carrito.filter(row
 function changeQty(i,delta){let row=carrito[i],p=productos.find(x=>String(x.codigo)===String(row.codigo));if(!row||!p)return;let stock=stockDisponible(p),n=Number(row.cantidad)+delta;if(n<=0){carrito.splice(i,1)}else if(n>stock){$('vMsg').textContent=`STOCK INSUFICIENTE. Disponible: ${stock} ${stock===1?'unidad':'unidades'}.`;$('vMsg').className='msg err';$('vCodigo').focus();return}else row.cantidad=n;store(CART_KEY,carrito);renderCart();$('vCodigo').focus()}
 function renderCart(){normalizarCarritoPorStock();let total=carrito.reduce((s,x)=>s+Number(x.precio)*Number(x.cantidad),0);$('total').textContent=total.toFixed(2);$('carrito').innerHTML=carrito.length?carrito.map((x,i)=>{let p=productos.find(y=>String(y.codigo)===String(x.codigo)),stock=stockDisponible(p),tope=Number(x.cantidad)>=stock;return `<div class='cartrow'><div class='cartinfo'><b>${esc(x.nombre)}</b><div class='muted'>S/ ${Number(x.precio).toFixed(2)} c/u · Subtotal S/ ${(Number(x.precio)*Number(x.cantidad)).toFixed(2)} · Stock disponible: ${stock}</div></div><div class='qty'><button onclick='changeQty(${i},-1)'>−</button><strong>${x.cantidad}</strong><button onclick='changeQty(${i},1)' ${tope?'disabled title="Stock máximo alcanzado"':''}>+</button><button class='trash' onclick='removeCart(${i})'>🗑️</button></div></div>`}).join(''):`<p class='muted'>Aún no hay productos en esta venta.</p>`}
 window.changeQty=changeQty;window.removeCart=i=>{carrito.splice(i,1);store(CART_KEY,carrito);renderCart();$('vCodigo').focus()};
-function finishPay(medio){if(!carrito.length){$('payMsg').textContent='Agregue al menos un producto.';$('payMsg').className='msg err';return}if(!validarStockVenta(carrito,'payMsg'))return;let total=carrito.reduce((s,x)=>s+x.precio*x.cantidad,0), cid=Number($('ventaCliente')?.value||0), cli=clientes.find(c=>c.id===cid), venta={id:Date.now(),fecha:new Date().toISOString(),medio,total,items:JSON.parse(JSON.stringify(carrito)),clienteId:cli?.id||null,clienteNombre:cli?.nombre||''};if(medio==='CREDITO'){store(CREDIT_PENDING,venta);$('payMsg').textContent='Venta conservada. Ahora seleccione el cliente para el crédito.';$('payMsg').className='msg ok';setTimeout(()=>show('credito'),350);return}if(!descontarStock(carrito))return;ventas.push(venta);store(SALES_KEY,ventas);save();carrito=[];store(CART_KEY,carrito);renderCart();cargarSelectorVenta();$('payMsg').textContent=`✓ Venta registrada por ${medio}. Total S/ ${total.toFixed(2)}`;$('payMsg').className='msg ok'} document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>finishPay(b.dataset.pay));
+let ventaEnProceso=false;
+async function finishPay(medio){
+ if(ventaEnProceso)return;
+ if(!carrito.length){$('payMsg').textContent='Agregue al menos un producto.';$('payMsg').className='msg err';return}
+ if(!validarStockVenta(carrito,'payMsg'))return;
+ if(medio==='CREDITO'){$('payMsg').textContent='Créditos compartidos aún no habilitados. No se registró ninguna venta.';$('payMsg').className='msg err';return}
+ if(!window.abuelitaVentasCloud){$('payMsg').textContent='Espere a que se cargue el módulo de ventas.';$('payMsg').className='msg err';return}
+ if(!navigator.onLine){$('payMsg').textContent='Sin conexión. Las ventas sin internet estarán disponibles en la siguiente etapa. No se registró ninguna venta.';$('payMsg').className='msg err';return}
+ ventaEnProceso=true;document.querySelectorAll('[data-pay]').forEach(b=>b.disabled=true);
+ const items=JSON.parse(JSON.stringify(carrito));const total=items.reduce((a,x)=>a+Number(x.precio)*Number(x.cantidad),0);
+ const cid=Number($('ventaCliente')?.value||0),cli=clientes.find(c=>c.id===cid);
+ const venta={id:crypto.randomUUID(),fecha:new Date().toISOString(),medio,total:Math.round(total*100)/100,items,clienteId:cli?.id||null,clienteNombre:cli?.nombre||''};
+ $('payMsg').textContent='☁️ Confirmando venta y stock en Firebase…';$('payMsg').className='msg';
+ try{
+  await window.abuelitaVentasCloud.registrar(venta);
+  ventas.push(venta);store(SALES_KEY,ventas);
+  carrito=[];store(CART_KEY,carrito);renderCart();cargarSelectorVenta();
+  await window.abuelitaProductosCloud.actualizar();
+  $('payMsg').textContent=`✓ Venta sincronizada por ${medio}. Total S/ ${total.toFixed(2)}`;$('payMsg').className='msg ok';
+ }catch(e){$('payMsg').textContent='No se confirmó la venta: '+e.message+'. Revise Firestore antes de reintentar si hubo una desconexión.';$('payMsg').className='msg err'}
+ finally{ventaEnProceso=false;document.querySelectorAll('[data-pay]').forEach(b=>b.disabled=false)}
+}
+document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>finishPay(b.dataset.pay));
 function descontarStock(items){for(const item of items){let p=productos.find(x=>x.codigo===item.codigo);if(!p||stockDisponible(p)<Number(item.cantidad||0)){$('payMsg').textContent='Stock insuficiente. Revise la venta.';$('payMsg').className='msg err';return false}}items.forEach(item=>{{let p=productos.find(x=>String(x.codigo)===String(item.codigo));p.cantidad=stockDisponible(p)-Number(item.cantidad||0)}});return true}
 
 function clienteActivo(c){return c.activo!==false}
