@@ -1,31 +1,17 @@
 import {auth,db} from './firebase-auth.js';
 import {onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import {doc,getDoc,collection,getDocsFromServer} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import {doc,getDoc,collection,getDocsFromServer,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 const KEY='la_abuelita_productos_v1';
-const state=document.getElementById('firebaseCatalogoEstado');
-function say(s){if(state)state.textContent=s;}
-let running=false;
-async function hydrate(user){
- if(running)return;running=true;
- try{
-  const permiso=await getDoc(doc(db,'usuarios',user.uid));
-  if(!permiso.exists()||permiso.data().estado!=='activo')return;
-  const local=JSON.parse(localStorage.getItem(KEY)||'[]');
-  if(!Array.isArray(local))throw Error('Catálogo local no válido; se conserva sin cambios.');
-  if(local.length){say('📱 Catálogo local: '+local.length+' productos. No se reemplazaron datos locales.');return;}
-  say('☁️ Descargando catálogo de Firebase…');
-  const snap=await getDocsFromServer(collection(db,'productos'));
-  if(snap.empty){say('No hay productos en Firebase.');return;}
-  const items=snap.docs.map(d=>{const p=d.data();return {codigo:String(p.codigo),nombre:String(p.nombre),precio:Number(p.precio),cantidad:Number(p.cantidad),creado:String(p.creado||'')}});
-  if(items.some(p=>!p.codigo||!p.nombre||!Number.isFinite(p.precio)||!Number.isSafeInteger(p.cantidad)))throw Error('Datos de productos no válidos.');
-  // No sobrescribir una edición realizada mientras se descargaba el catálogo.
-  const current=JSON.parse(localStorage.getItem(KEY)||'[]');
-  if(!Array.isArray(current)||current.length){say('Catálogo local cambiado; no se reemplazó.');return;}
-  localStorage.setItem(KEY,JSON.stringify(items));
-  // app.js usa una variable léxica global; actualizarla sin recargar y refrescar las vistas.
-  if(typeof productos!=='undefined'){productos=items; if(typeof render==='function')render();}
-  say('✓ '+items.length+' productos descargados y guardados en este dispositivo.');
- }catch(e){say('⚠️ No se pudo descargar el catálogo: '+(e.code||e.message)+'. Los datos locales siguen intactos.');}
- finally{running=false;}
-}
-onAuthStateChanged(auth,user=>{if(user)hydrate(user);else say('Inicia sesión para consultar el catálogo.');});
+const el=document.getElementById('firebaseCatalogoEstado');
+const say=t=>{if(el)el.textContent=t};
+let active=false;
+function valid(p){return typeof p.codigo==='string'&&p.codigo.length>0&&typeof p.nombre==='string'&&p.nombre.trim().length>0&&Number.isFinite(p.precio)&&p.precio>=0&&Number.isSafeInteger(p.cantidad)&&p.cantidad>=0}
+async function allowed(){const u=auth.currentUser;if(!u)throw Error('Inicie sesión');const d=await getDoc(doc(db,'usuarios',u.uid));if(!d.exists()||d.data().estado!=='activo')throw Error('Cuenta no autorizada');return u}
+async function refresh(){if(active)return;active=true;try{await allowed();if(!navigator.onLine){say('Sin conexión: se conserva el catálogo local.');return}say('☁️ Actualizando catálogo de Firebase…');const snap=await getDocsFromServer(collection(db,'productos'));const list=snap.docs.map(x=>{const p=x.data();return {codigo:String(p.codigo),nombre:String(p.nombre),precio:Number(p.precio),cantidad:Number(p.cantidad),creado:String(p.creado||'')}});if(!list.every(valid))throw Error('Datos de catálogo no válidos');if(list.length){localStorage.setItem(KEY,JSON.stringify(list));if(typeof productos!=='undefined'){productos=list;if(typeof render==='function')render()}}say('✓ '+list.length+' productos consultados en Firebase.')}catch(e){say('⚠️ Sin actualización: '+e.message+'. Se mantienen datos locales.')}finally{active=false}}
+window.abuelitaProductosCloud={
+ async crear(p){const u=await allowed();if(!navigator.onLine)throw Error('Registrar productos requiere conexión en esta versión');if(!valid(p))throw Error('Datos inválidos');await runTransaction(db,async tx=>{const ref=doc(db,'productos',p.codigo);if((await tx.get(ref)).exists())throw Error('Código ya registrado en Firebase');tx.set(ref,{...p,importadoPor:u.uid})})},
+ async editar(codigo,cambios){await allowed();if(!navigator.onLine)throw Error('Editar productos requiere conexión en esta versión');await runTransaction(db,async tx=>{const ref=doc(db,'productos',codigo);const old=await tx.get(ref);if(!old.exists())throw Error('Producto no encontrado en Firebase');const p={...old.data(),...cambios};if(!valid(p))throw Error('Datos inválidos');tx.update(ref,cambios)})},
+ actualizar:refresh
+};
+onAuthStateChanged(auth,u=>{if(u)refresh();else say('Inicie sesión para actualizar el catálogo.')});
+window.addEventListener('online',()=>{if(auth.currentUser)refresh()});

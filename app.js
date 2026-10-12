@@ -17,7 +17,7 @@ function productoRapidoDuplicado(ex){
   limpiarCamposRegistroRapido();
   setTimeout(()=>$('qCodigo').focus(),0);
 }
-function guardarRapido(){
+async function guardarRapido(){
   let codigo=$('qCodigo').value.trim(), nombre=$('qNombre').value.trim();
   let precioTxt=$('qPrecio').value.trim().replace(',','.'), cantTxt=$('qCantidad').value.trim();
   let precio=precioTxt===''?0:Number(precioTxt), cantidad=cantTxt===''?0:parseInt(cantTxt,10);
@@ -25,7 +25,11 @@ function guardarRapido(){
   let existente=productos.find(p=>String(p.codigo)===codigo);
   if(existente){productoRapidoDuplicado(existente);return}
   if(!(precio>=0)||!(cantidad>=0)){$('qMsg').textContent='Revise precio o stock.';$('qMsg').className='msg err';return}
-  productos.unshift({codigo,nombre,precio,cantidad,creado:new Date().toISOString()});store(KEY,productos);render();
+  const nuevo={codigo,nombre,precio,cantidad,creado:new Date().toISOString()};
+  if(!window.abuelitaProductosCloud){$('qMsg').textContent='Espere la conexión segura con Firebase.';return;}
+  $('qGuardar').disabled=true;
+  try{await window.abuelitaProductosCloud.crear(nuevo)}catch(e){$('qMsg').textContent='No se guardó en Firebase: '+e.message;$('qMsg').className='msg err';return}finally{$('qGuardar').disabled=false}
+  productos.unshift(nuevo);store(KEY,productos);render();
   limpiarCamposRegistroRapido();$('qMsg').textContent=`✓ Producto registrado: ${nombre}. Listo para el siguiente.`;$('qMsg').className='msg ok';$('qCodigo').focus();
 }
 $('qGuardar').onclick=guardarRapido;
@@ -76,12 +80,16 @@ $('buscar').addEventListener('keydown',e=>{
   const arr=q?productos.filter(p=>normText(p.nombre).includes(normText(q))||normText(p.codigo).includes(normText(q))):[];
   if(arr.length===1)seleccionarProducto(arr[0].codigo);
 });
-$('guardar').onclick=()=>{
+$('guardar').onclick=async()=>{
   let original=$('editOriginalCodigo').value,codigo=$('codigo').value.trim(),nombre=$('nombre').value.trim();let precio=Number(($('precio').value||'0').replace(',','.')),cantidad=parseInt($('cantidad').value||'0',10);
   if(!original)return msg('Primero seleccione un producto.','err');if(!codigo||!nombre||!(precio>=0)||!(cantidad>=0))return msg('Revise los datos del producto.','err');
   if(productos.some(p=>String(p.codigo)===codigo&&String(p.codigo)!==String(original)))return msg('Ese código pertenece a otro producto.','err');
   let p=productos.find(x=>String(x.codigo)===String(original));if(!p)return msg('Producto no encontrado.','err');
-  p.codigo=codigo;p.nombre=nombre;p.precio=precio;p.cantidad=cantidad;store(KEY,productos);
+  if(codigo!==original)return msg('Por seguridad, el código de barras no puede modificarse. Cree otro producto si cambió.','err');
+  if(!window.abuelitaProductosCloud)return msg('Espere la conexión segura con Firebase.','err');
+  $('guardar').disabled=true;
+  try{await window.abuelitaProductosCloud.editar(original,{nombre,precio,cantidad})}catch(e){msg('No se guardó en Firebase: '+e.message,'err');return}finally{$('guardar').disabled=false}
+  p.nombre=nombre;p.precio=precio;p.cantidad=cantidad;store(KEY,productos);
   limpiarEdicionProducto();render();$('buscar').focus();
 };
 $('cancelarEdicionProducto').onclick=()=>{limpiarEdicionProducto();render();$('buscar').focus()};
