@@ -46,3 +46,5 @@ onAuthStateChanged(auth, async user=>{
   }
 });
 getRedirectResult(auth).catch(e=>{estado.textContent='Error de inicio de sesión: '+e.message});
+
+export { auth, db };
