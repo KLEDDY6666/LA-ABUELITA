@@ -1,0 +1,19 @@
+LA ABUELITA V1.32 - CATÁLOGO AUTOMÁTICO (FIREBASE SPARK)
+
+CAMBIOS
+- Escucha de Firestore en tiempo real para productos; no requiere pulsar ACTUALIZAR PRODUCTOS.
+- Sincroniza cuando el usuario inicia sesión y cuando vuelve la conexión.
+- Conserva el catálogo local si no hay conexión, si el catálogo remoto está vacío o si hay productos inválidos.
+- No cambia los permisos ni las reglas de Firebase.
+- No modifica la lógica de ventas: las cuentas con rol usuario aún NO pueden confirmar ventas en Firestore con las reglas actuales.
+
+INSTALACIÓN
+1. Conserva el ZIP de V1.31 como respaldo.
+2. Extrae este ZIP y sube los archivos de su interior a la raíz del repositorio LA-ABUELITA en GitHub, reemplazando los anteriores.
+3. Espera la publicación de GitHub Pages. Abre la app con internet y accede con Google.
+4. Verifica que se muestre 'productos sincronizados automáticamente'.
+5. Cambia el precio o stock de un producto desde la cuenta admin, y verifica en el otro dispositivo la actualización sin tocar botones.
+6. No alteres las reglas de Firestore para esta versión.
+
+PRUEBAS
+Se ha verificado sintaxis de JS y contenido del ZIP localmente; no se ha probado contra tu Firebase real.
