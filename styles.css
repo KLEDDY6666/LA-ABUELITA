@@ -19,3 +19,6 @@
 
 /* V1.19: logo real visible en la cabecera */
 .brand{display:flex;align-items:center;justify-content:center;flex:none;font-size:initial}.brandLogo{display:block;width:76px;height:76px;object-fit:contain;border-radius:12px}@media(max-width:600px){.brandLogo{width:58px;height:58px}}
+
+/* V1.35: identificación del vendedor en el historial */
+.movementSeller{margin-top:7px;font-size:.94em;color:#c9b9a6}.movementSeller b{color:#f3e4d2}

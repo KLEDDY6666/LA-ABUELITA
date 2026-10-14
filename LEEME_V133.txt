@@ -1,0 +1,11 @@
+LA ABUELITA V1.33 - SIN BOTÓN ACTUALIZAR PRODUCTOS
+
+Cambios respecto a V1.32:
+- Se eliminó completamente el botón ACTUALIZAR PRODUCTOS del HTML.
+- La sincronización automática de Firestore sigue activa mediante onSnapshot.
+- Se mantiene el mensaje de estado del catálogo.
+- Se actualizó la versión de caché del service worker para renovar los archivos.
+
+Instalación: conservar una copia de V1.32; subir los archivos de este ZIP a la raíz del repositorio GitHub Pages, reemplazando los anteriores. Esperar la publicación y cerrar/reabrir la PWA. Si persiste la interfaz anterior, actualizar la página o cerrar la aplicación e iniciarla nuevamente.
+
+No modifica reglas de Firebase ni habilita todavía ventas para usuarios familiares.

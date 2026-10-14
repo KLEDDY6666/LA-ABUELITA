@@ -23,12 +23,29 @@ window.abuelitaVentasCloud={async registrar(v){
 }};
 // Historial compartido: muestra ventas de todos los usuarios activos, no solo del dispositivo.
 let stop=null;
+const nombresVendedores = new Map();
+let sesionVendedores = 0;
+async function cargarVendedores(ventas, sesion){
+ const uids=[...new Set(ventas.map(v=>v.registradoPor).filter(uid=>typeof uid==='string'&&uid))];
+ const faltantes=uids.filter(uid=>!nombresVendedores.has(uid));
+ await Promise.all(faltantes.map(async uid=>{
+  try{
+   const snap=await getDoc(doc(db,'usuarios',uid));
+   const data=snap.exists()?snap.data():{};
+   const nombre=typeof data.nombre==='string'&&data.nombre.trim()?data.nombre.trim():'Usuario no identificado';
+   nombresVendedores.set(uid,nombre);
+  }catch(e){console.warn('No se pudo consultar vendedor:',e.code||e.message);nombresVendedores.set(uid,'Vendedor no disponible')}
+ }));
+ if(sesion!==sesionVendedores||!auth.currentUser)return;
+ if(typeof window.abuelitaAplicarNombresVendedores==='function')window.abuelitaAplicarNombresVendedores(Object.fromEntries(nombresVendedores));
+}
 import {onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
 onAuthStateChanged(auth,u=>{
- if(stop){stop();stop=null}if(!u)return;
+ sesionVendedores++;nombresVendedores.clear();if(stop){stop();stop=null}if(!u)return;const sesion=sesionVendedores;
  stop=onSnapshot(query(collection(db,'ventas'),orderBy('fecha','desc'),limit(300)),snap=>{
   if(snap.metadata.fromCache)return;
   const data=snap.docs.map(d=>d.data());
   if(typeof window.abuelitaAplicarVentasCompartidas==='function')window.abuelitaAplicarVentasCompartidas(data);
+  cargarVendedores(data,sesion).catch(e=>console.warn('Nombres de vendedores:',e.message));
  },e=>console.warn('Historial compartido no disponible:',e.message));
 });
