@@ -3,7 +3,6 @@ import {onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/11.10.0/fir
 import {doc,getDoc,collection,onSnapshot,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 const KEY='la_abuelita_productos_v1';
 const el=document.getElementById('firebaseCatalogoEstado');
-const boton=document.getElementById('actualizarCatalogoCompartido');
 const say=t=>{if(el)el.textContent=t};
 let unsubscribe=null;
 let lastSignature='';
@@ -37,5 +36,4 @@ window.abuelitaProductosCloud={
  actualizar:refresh
 };
 onAuthStateChanged(auth,u=>{if(u)listen();else{stop();say('Inicie sesión para sincronizar el catálogo.')}});
-if(boton)boton.addEventListener('click',refresh);
 window.addEventListener('online',()=>{if(auth.currentUser&&!unsubscribe)listen()});

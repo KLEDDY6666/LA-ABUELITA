@@ -94,7 +94,7 @@ $('guardar').onclick=async()=>{
   limpiarEdicionProducto();render();$('buscar').focus();
 };
 $('cancelarEdicionProducto').onclick=()=>{limpiarEdicionProducto();render();$('buscar').focus()};
-function addVenta(){let code=$('vCodigo').value.trim();if(!code)return;let p=productos.find(x=>x.codigo===code);if(!p){$('vMsg').textContent='Producto no encontrado.';$('vMsg').className='msg err';$('vCodigo').select();return}let row=carrito.find(x=>x.codigo===code),qty=row?row.cantidad+1:1;if(stockDisponible(p)<=0||qty>stockDisponible(p)){$('vMsg').textContent=`STOCK INSUFICIENTE. Disponible: ${stockDisponible(p)} ${stockDisponible(p)===1?'unidad':'unidades'}.`;$('vMsg').className='msg err';$('vCodigo').value='';$('vCodigo').focus();return}if(row)row.cantidad++;else carrito.push({codigo:p.codigo,nombre:p.nombre,precio:Number(p.precio),cantidad:1});store(CART_KEY,carrito);$('vCodigo').value='';$('vMsg').textContent=`✓ Agregado al carrito: ${p.nombre}. Stock disponible: ${stockDisponible(p)} ${stockDisponible(p)===1?'unidad':'unidades'}.`;$('vMsg').className='msg ok';renderCart();$('vCodigo').focus()}
+function addVenta(){let code=$('vCodigo').value.trim();if(!code)return;let p=productos.find(x=>x.codigo===code);if(!p){$('vMsg').textContent='Producto no encontrado.';$('vMsg').className='msg err';$('vCodigo').select();return}let row=carrito.find(x=>x.codigo===code),qty=row?row.cantidad+1:1;if(stockDisponible(p)<=0||qty>stockDisponible(p)){$('vMsg').textContent=`STOCK INSUFICIENTE. Disponible: ${stockDisponible(p)} ${stockDisponible(p)===1?'unidad':'unidades'}.`;$('vMsg').className='msg err';$('vCodigo').value='';$('vCodigo').focus();return}if(!row&&carrito.length>=4){$('vMsg').textContent='Máximo 4 productos diferentes por venta en esta etapa. Finalice esta venta y registre otra.';$('vMsg').className='msg err';return}if(row)row.cantidad++;else carrito.push({codigo:p.codigo,nombre:p.nombre,precio:Number(p.precio),cantidad:1});store(CART_KEY,carrito);$('vCodigo').value='';$('vMsg').textContent=`✓ Agregado al carrito: ${p.nombre}. Stock disponible: ${stockDisponible(p)} ${stockDisponible(p)===1?'unidad':'unidades'}.`;$('vMsg').className='msg ok';renderCart();$('vCodigo').focus()}
 $('vCodigo').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addVenta()}});
 function pendientesVenta(){return load(OFFLINE_SALES_KEY,[])}
 function stockReservado(codigo){return pendientesVenta().filter(x=>x.estado!=='error').reduce((n,v)=>n+(v.items||[]).filter(i=>String(i.codigo)===String(codigo)).reduce((m,i)=>m+Number(i.cantidad||0),0),0)}
@@ -132,6 +132,7 @@ let ventaEnProceso=false;
 async function finishPay(medio){
  if(ventaEnProceso)return;
  if(!carrito.length){$('payMsg').textContent='Agregue al menos un producto.';$('payMsg').className='msg err';return}
+ if(carrito.length>4){$('payMsg').textContent='Máximo 4 productos diferentes por venta.';$('payMsg').className='msg err';return}
  if(!validarStockVenta(carrito,'payMsg'))return;
  if(medio==='CREDITO'){$('payMsg').textContent='Créditos compartidos aún no habilitados. No se registró ninguna venta.';$('payMsg').className='msg err';return}
  if(!window.abuelitaVentasCloud){$('payMsg').textContent='Espere a que se cargue el módulo de ventas.';$('payMsg').className='msg err';return}
@@ -348,3 +349,6 @@ window.abuelitaAplicarCatalogo=function(lista){
   render();renderCart();
   if(typeof renderCompra==='function')renderCompra();
 };
+
+// Ventas confirmadas desde cualquier cuenta: evita duplicados por ID y conserva la cola offline local.
+window.abuelitaAplicarVentasCompartidas=function(remotas){const mapa=new Map(ventas.map(v=>[v.id,v]));for(const v of remotas)mapa.set(v.id,v);ventas=[...mapa.values()];store(SALES_KEY,ventas);if(!$('movimientos').classList.contains('hidden'))renderMovimientos()};
