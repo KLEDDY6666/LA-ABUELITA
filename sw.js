@@ -1,4 +1,4 @@
-const C='la-abuelita-pwa-mobile-v1-30-catalogo-usuarios';
+const C='la-abuelita-pwa-mobile-v1-31-diagnostico-catalogo';
 const A=['./','index.html','styles.css','app.js','firebase-auth.js','firebase-productos.js','firebase-catalogo.js','firebase-ventas.js','manifest.json','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(A)))});
 self.addEventListener('activate',e=>{e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==C).map(k=>caches.delete(k))))]))});
