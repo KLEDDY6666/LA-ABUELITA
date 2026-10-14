@@ -5,13 +5,13 @@ const modulos=[['consulta','🔍 Consultar precios'],['ventas','🛒 Ventas'],['
 const $=id=>document.getElementById(id);
 let rol='',permisos={},usuarios=[],unsubscribe=null,session=0;
 const permitido=k=>rol==='admin'||permisos[k]!==false;
-const pantallaModulo={consulta:'consulta',venta:'ventas',registroRapido:'productos',productos:'productos',compra:'compras',credito:'creditos',movimientos:'reportes',permisos:'admin'};
-window.abuelitaPermitePantalla=p=>p==='permisos'?rol==='admin':(pantallaModulo[p]?permitido(pantallaModulo[p]):true);
+const pantallaModulo={consulta:'consulta',venta:'ventas',registroRapido:'productos',productos:'productos',compra:'compras',credito:'creditos',movimientos:'reportes',permisos:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
+window.abuelitaPermitePantalla=p=>pantallaModulo[p]==='admin'?rol==='admin':(pantallaModulo[p]?permitido(pantallaModulo[p]):true);
 function refrescar(){
- const elementos={venta:'ventas',compra:'compras',consulta:'consulta',credito:'creditos',registroRapido:'productos',productos:'productos',movimientos:'reportes',permisos:'admin'};
+ const elementos={administracion:'admin',venta:'ventas',compra:'compras',consulta:'consulta',credito:'creditos',registroRapido:'productos',productos:'productos',movimientos:'reportes',permisos:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
  for(const b of document.querySelectorAll('[data-go]')){const k=elementos[b.dataset.go];if(k)b.style.display=k==='admin'?(rol==='admin'?'':'none'):(permitido(k)?'':'none')}
  $('btnPermisosAdmin').style.display=rol==='admin'?'':'none';
- // Administración permanece accesible para otras funciones que no son parte de estos módulos.
+ // Configuración y todas sus pantallas están reservadas al administrador por rol.
  const visible=document.querySelector('section.screen:not(.hidden)');if(visible&&!window.abuelitaPermitePantalla(visible.id)){document.querySelectorAll('.screen').forEach(e=>e.classList.add('hidden'));$('home').classList.remove('hidden')}
 }
 function pintar(){const id=$('permUsuario').value;const u=usuarios.find(x=>x.uid===id);$('permChecks').innerHTML='';if(!u)return;for(const [k,label] of modulos){const fila=document.createElement('label');fila.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 3px;border-bottom:1px solid #ddd;font-size:17px';const txt=document.createElement('span');txt.textContent=label;const cb=document.createElement('input');cb.type='checkbox';cb.dataset.permiso=k;cb.checked=u.permisos?.[k]!==false;cb.style.cssText='width:25px;height:25px;flex-shrink:0';fila.append(txt,cb);$('permChecks').append(fila)}$('permMensaje').textContent=''}
