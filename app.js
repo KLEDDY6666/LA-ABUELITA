@@ -295,7 +295,25 @@ $('guardarCompra').onclick=()=>{let pid=Number($('compraProveedor').value),prov=
 const nombresVendedoresCompartidos = Object.create(null);
 window.abuelitaAplicarNombresVendedores = function(nombres){Object.assign(nombresVendedoresCompartidos,nombres);if(!$('movimientos').classList.contains('hidden'))renderMovimientos()};
 function nombreVendedor(v){const uid=String(v.registradoPor||'');return uid?(nombresVendedoresCompartidos[uid]||'Consultando vendedor…'):'Sin identificar (venta anterior)'}
-function renderMovimientos(){if(!$('listaMovimientos'))return;let tipo=$('movTipo').value,desde=$('movDesde').value,hasta=$('movHasta').value,arr=tipo==='ventas'?ventas:compras;arr=arr.filter(x=>{let d=x.fecha.slice(0,10);return(!desde||d>=desde)&&(!hasta||d<=hasta)}).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));let total=tipo==='ventas'?arr.reduce((s,x)=>s+Number(x.total||0),0):arr.length;$('movResumen').innerHTML=tipo==='ventas'?`<b>${arr.length}</b> venta(s) · Total S/ <b>${total.toFixed(2)}</b>`:`<b>${arr.length}</b> compra(s) registrada(s)`;$('listaMovimientos').innerHTML=arr.length?arr.map(x=>`<div class='movement'><div><b>${fechaHora(x.fecha)}</b><div>${tipo==='ventas'?(x.clienteNombre?esc(x.clienteNombre):'Sin cliente'):`Proveedor: ${esc(x.proveedorNombre||'')}`}</div>${tipo==='ventas'?`<div class='movementSeller'>👤 Vendido por: <b>${esc(nombreVendedor(x))}</b></div>`:''}<div class='movementItems'>${(x.items||[]).map(i=>`${esc(i.nombre)} × ${i.cantidad}`).join(' · ')}</div></div><div class='movementAmount'>${tipo==='ventas'?`${esc(x.medio)}<br>S/ ${Number(x.total||0).toFixed(2)}`:`${(x.items||[]).reduce((s,i)=>s+Number(i.cantidad||0),0)} unid.`}</div></div>`).join(''):`<p class='muted'>No hay movimientos para el periodo seleccionado.</p>`}
+function renderMovimientos(){if(!$('listaMovimientos'))return;let tipo=$('movTipo').value,desde=$('movDesde').value,hasta=$('movHasta').value,arr=tipo==='ventas'?ventas:compras;arr=arr.filter(x=>{let d=x.fecha.slice(0,10);return(!desde||d>=desde)&&(!hasta||d<=hasta)}).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));let total=tipo==='ventas'?arr.reduce((s,x)=>s+Number(x.total||0),0):arr.length;$('movResumen').innerHTML=tipo==='ventas'?`<b>${arr.length}</b> venta(s) · Total S/ <b>${total.toFixed(2)}</b>`:`<b>${arr.length}</b> compra(s) registrada(s)`;resumenVentasV136(arr);$('listaMovimientos').innerHTML=arr.length?arr.map(x=>`<div class='movement'><div><b>${fechaHora(x.fecha)}</b><div>${tipo==='ventas'?(x.clienteNombre?esc(x.clienteNombre):'Sin cliente'):`Proveedor: ${esc(x.proveedorNombre||'')}`}</div>${tipo==='ventas'?`<div class='movementSeller'>👤 Vendido por: <b>${esc(nombreVendedor(x))}</b></div>`:''}<div class='movementItems'>${(x.items||[]).map(i=>`${esc(i.nombre)} × ${i.cantidad}`).join(' · ')}</div></div><div class='movementAmount'>${tipo==='ventas'?`${esc(x.medio)}<br>S/ ${Number(x.total||0).toFixed(2)}`:`${(x.items||[]).reduce((s,i)=>s+Number(i.cantidad||0),0)} unid.`}</div></div>`).join(''):`<p class='muted'>No hay movimientos para el periodo seleccionado.</p>`}
+
+// V1.36: resumen por vendedor y medio de pago; respeta los filtros de fecha existentes.
+function resumenVentasV136(arr){
+ const nodo=$('movReportes');if(!nodo)return;
+ if($('movTipo').value!=='ventas'){nodo.innerHTML='';return}
+ const vendedores=new Map(),medios=new Map();
+ for(const v of arr){
+  const uid=String(v.registradoPor||'sin-identificar');
+  const ven=vendedores.get(uid)||{nombre:nombreVendedor(v),cantidad:0,total:0};
+  ven.nombre=nombreVendedor(v);ven.cantidad++;ven.total+=Number(v.total)||0;vendedores.set(uid,ven);
+  const medio=String(v.medio||'SIN MEDIO');const m=medios.get(medio)||{cantidad:0,total:0};
+  m.cantidad++;m.total+=Number(v.total)||0;medios.set(medio,m);
+ }
+ const filas=(valores)=>[...valores].map(x=>`<tr><td>${esc(x.nombre||x.medio)}</td><td>${x.cantidad}</td><td>S/ ${x.total.toFixed(2)}</td></tr>`).join('');
+ const porVendedor=[...vendedores.values()].sort((a,b)=>b.total-a.total);
+ const porMedio=[...medios.entries()].map(([medio,x])=>({...x,medio}));
+ nodo.innerHTML=`<h3>👤 Ventas por vendedor</h3><div class="tablaScroll"><table class="reporteTabla"><thead><tr><th>Vendedor</th><th>Ventas</th><th>Total</th></tr></thead><tbody>${filas(porVendedor)||'<tr><td colspan="3">Sin ventas en el periodo</td></tr>'}</tbody></table></div><h3>💵 Ventas por medio de pago</h3><div class="tablaScroll"><table class="reporteTabla"><thead><tr><th>Medio</th><th>Ventas</th><th>Total</th></tr></thead><tbody>${filas(porMedio)||'<tr><td colspan="3">Sin ventas en el periodo</td></tr>'}</tbody></table></div>`;
+}
 $('verMovimientos').onclick=renderMovimientos;$('movTipo').onchange=renderMovimientos;
 cargarSelectorVenta();renderProveedores();renderCompra();
 

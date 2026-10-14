@@ -22,3 +22,6 @@
 
 /* V1.35: identificación del vendedor en el historial */
 .movementSeller{margin-top:7px;font-size:.94em;color:#c9b9a6}.movementSeller b{color:#f3e4d2}
+
+/* V1.36: reportes legibles en pantalla pequeña */
+.reportesV136{margin:14px 0 20px}.reportesV136 h3{margin:18px 0 8px}.tablaScroll{overflow-x:auto}.reporteTabla{width:100%;border-collapse:collapse;font-size:16px}.reporteTabla th,.reporteTabla td{padding:10px 8px;border-bottom:1px solid #d8d2ca;text-align:left}.reporteTabla th:last-child,.reporteTabla td:last-child{text-align:right}.reporteTabla th:nth-child(2),.reporteTabla td:nth-child(2){text-align:center}
