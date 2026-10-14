@@ -7,7 +7,7 @@ const say=t=>{if(el)el.textContent=t};
 let unsubscribe=null;
 let lastSignature='';
 function valid(p){return typeof p.codigo==='string'&&p.codigo.length>0&&typeof p.nombre==='string'&&p.nombre.trim().length>0&&Number.isFinite(p.precio)&&p.precio>=0&&Number.isSafeInteger(p.cantidad)&&p.cantidad>=0}
-async function allowed(){const u=auth.currentUser;if(!u)throw Error('Inicie sesión');const d=await getDoc(doc(db,'usuarios',u.uid));if(!d.exists()||d.data().estado!=='activo'||!['admin','usuario'].includes(d.data().rol))throw Error('Cuenta no autorizada');return u}
+async function allowed(){const u=auth.currentUser;if(!u)throw Error('Inicie sesión');const d=await getDoc(doc(db,'usuarios',u.uid));if(!d.exists()||d.data().estado!=='activo'||!['admin','usuario'].includes(d.data().rol))throw Error('Cuenta no autorizada');if(d.data().rol!=='admin' && d.data().permisos?.productos===false)throw Error('No tienes permiso para modificar productos');return u}
 function stop(){if(unsubscribe){unsubscribe();unsubscribe=null}lastSignature=''}
 function listen(){
  stop();
