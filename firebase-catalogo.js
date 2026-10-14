@@ -7,7 +7,7 @@ const say=t=>{if(el)el.textContent=t};
 let unsubscribe=null;
 let lastSignature='';
 function valid(p){return typeof p.codigo==='string'&&p.codigo.length>0&&typeof p.nombre==='string'&&p.nombre.trim().length>0&&Number.isFinite(p.precio)&&p.precio>=0&&Number.isSafeInteger(p.cantidad)&&p.cantidad>=0}
-async function allowed(){const u=auth.currentUser;if(!u)throw Error('Inicie sesión');const d=await getDoc(doc(db,'usuarios',u.uid));if(!d.exists()||d.data().estado!=='activo'||!['admin','usuario'].includes(d.data().rol))throw Error('Cuenta no autorizada');if(d.data().rol!=='admin' && d.data().permisos?.productos===false)throw Error('No tienes permiso para modificar productos');return u}
+async function allowed(modulo){const u=auth.currentUser;if(!u)throw Error('Inicie sesión');const d=await getDoc(doc(db,'usuarios',u.uid));if(!d.exists()||d.data().estado!=='activo'||!['admin','usuario'].includes(d.data().rol))throw Error('Cuenta no autorizada');if(d.data().rol!=='admin' && d.data().permisos?.[modulo]===false)throw Error('No tienes permiso para esta operación');return u}
 function stop(){if(unsubscribe){unsubscribe();unsubscribe=null}lastSignature=''}
 function listen(){
  stop();
@@ -31,8 +31,8 @@ function listen(){
 }
 function refresh(){listen()}
 window.abuelitaProductosCloud={
- async crear(p){const u=await allowed();if(!navigator.onLine)throw Error('Registrar productos requiere conexión en esta versión');if(!valid(p))throw Error('Datos inválidos');await runTransaction(db,async tx=>{const ref=doc(db,'productos',p.codigo);if((await tx.get(ref)).exists())throw Error('Código ya registrado en Firebase');tx.set(ref,{...p,importadoPor:u.uid})})},
- async editar(codigo,cambios){await allowed();if(!navigator.onLine)throw Error('Editar productos requiere conexión en esta versión');await runTransaction(db,async tx=>{const ref=doc(db,'productos',codigo);const old=await tx.get(ref);if(!old.exists())throw Error('Producto no encontrado en Firebase');const p={...old.data(),...cambios};if(!valid(p))throw Error('Datos inválidos');tx.update(ref,cambios)})},
+ async crear(p){const u=await allowed('registro');if(!navigator.onLine)throw Error('Registrar productos requiere conexión en esta versión');if(!valid(p))throw Error('Datos inválidos');await runTransaction(db,async tx=>{const ref=doc(db,'productos',p.codigo);if((await tx.get(ref)).exists())throw Error('Código ya registrado en Firebase');tx.set(ref,{...p,importadoPor:u.uid})})},
+ async editar(codigo,cambios){await allowed('productos');if(!navigator.onLine)throw Error('Editar productos requiere conexión en esta versión');await runTransaction(db,async tx=>{const ref=doc(db,'productos',codigo);const old=await tx.get(ref);if(!old.exists())throw Error('Producto no encontrado en Firebase');const p={...old.data(),...cambios};if(!valid(p))throw Error('Datos inválidos');tx.update(ref,cambios)})},
  actualizar:refresh
 };
 onAuthStateChanged(auth,u=>{if(u)listen();else{stop();say('Inicie sesión para sincronizar el catálogo.')}});

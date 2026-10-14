@@ -1,14 +1,14 @@
 import {auth,db} from './firebase-auth.js';
 import {onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
 import {collection,doc,getDocs,onSnapshot,updateDoc} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
-const modulos=[['consulta','🔍 Consultar precios'],['ventas','🛒 Ventas'],['productos','🏷️ Productos (agregar y modificar)'],['compras','📦 Compras'],['creditos','💳 Créditos'],['reportes','📊 Reportes']];
+const modulos=[['consulta','🔍 Consultar precios'],['ventas','🛒 Ventas'],['registro','➕ Registrar producto'],['productos','🏷️ Productos (modificar)'],['compras','📦 Compras'],['creditos','💳 Créditos'],['reportes','📊 Reportes']];
 const $=id=>document.getElementById(id);
 let rol='',permisos={},usuarios=[],unsubscribe=null,session=0;
-const permitido=k=>rol==='admin'||permisos[k]!==false;
-const pantallaModulo={consulta:'consulta',venta:'ventas',registroRapido:'productos',productos:'productos',compra:'compras',credito:'creditos',movimientos:'reportes',permisos:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
+const permitido=k=>rol==='admin'||(rol==='usuario'&&permisos[k]!==false);
+const pantallaModulo={consulta:'consulta',venta:'ventas',registroRapido:'registro',productos:'productos',compra:'compras',credito:'creditos',movimientos:'reportes',permisos:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
 window.abuelitaPermitePantalla=p=>pantallaModulo[p]==='admin'?rol==='admin':(pantallaModulo[p]?permitido(pantallaModulo[p]):true);
 function refrescar(){
- const elementos={administracion:'admin',venta:'ventas',compra:'compras',consulta:'consulta',credito:'creditos',registroRapido:'productos',productos:'productos',movimientos:'reportes',permisos:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
+ const elementos={administracion:'admin',venta:'ventas',compra:'compras',consulta:'consulta',credito:'creditos',registroRapido:'registro',productos:'productos',movimientos:'reportes',permisos:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
  for(const b of document.querySelectorAll('[data-go]')){const k=elementos[b.dataset.go];if(k)b.style.display=k==='admin'?(rol==='admin'?'':'none'):(permitido(k)?'':'none')}
  $('btnPermisosAdmin').style.display=rol==='admin'?'':'none';
  // Configuración y todas sus pantallas están reservadas al administrador por rol.

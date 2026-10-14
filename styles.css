@@ -25,3 +25,6 @@
 
 /* V1.36: reportes legibles en pantalla pequeña */
 .reportesV136{margin:14px 0 20px}.reportesV136 h3{margin:18px 0 8px}.tablaScroll{overflow-x:auto}.reporteTabla{width:100%;border-collapse:collapse;font-size:16px}.reporteTabla th,.reporteTabla td{padding:10px 8px;border-bottom:1px solid #d8d2ca;text-align:left}.reporteTabla th:last-child,.reporteTabla td:last-child{text-align:right}.reporteTabla th:nth-child(2),.reporteTabla td:nth-child(2){text-align:center}
+
+/* V1.40: Configuración ocupa siempre toda la fila, incluso en móviles. */
+#home .adminTile{grid-column:1/-1;}
