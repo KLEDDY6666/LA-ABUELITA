@@ -340,3 +340,11 @@ $('cerrarScanner')?.addEventListener('click',cerrarScanner);$('cancelarScanner')
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&!$('scannerModal')?.classList.contains('hidden'))cerrarScanner()});
 
 $('sincronizarVentas').onclick=()=>sincronizarPendientes();pintarPendientes();
+
+// V1.30: puente explícito entre el catálogo Firebase y el estado local de la interfaz.
+window.abuelitaAplicarCatalogo=function(lista){
+  if(!Array.isArray(lista))throw Error('Catálogo inválido');
+  productos=lista;store(KEY,productos);
+  render();renderCart();
+  if(typeof renderCompra==='function')renderCompra();
+};
