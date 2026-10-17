@@ -1,6 +1,6 @@
 const OFFLINE_SALES_KEY='la_abuelita_ventas_pendientes_v128';
 const KEY='la_abuelita_productos_v1', DRAFT_KEY='la_abuelita_producto_borrador_v1', CART_KEY='la_abuelita_carrito_v1', SALES_KEY='la_abuelita_ventas_v1', CREDIT_PENDING='la_abuelita_credito_pendiente_v1', CLIENTS_KEY='la_abuelita_clientes_v1', CREDITS_KEY='la_abuelita_creditos_v1', PAYMENTS_KEY='la_abuelita_pagos_credito_v1', SUPPLIERS_KEY='la_abuelita_proveedores_v1', PURCHASES_KEY='la_abuelita_compras_v1', PURCHASE_CART_KEY='la_abuelita_carrito_compra_v1';
-const $=id=>document.getElementById(id); let productos=load(KEY,[]), carrito=load(CART_KEY,[]), ventas=load(SALES_KEY,[]), clientes=load(CLIENTS_KEY,[]), creditos=load(CREDITS_KEY,[]), pagos=load(PAYMENTS_KEY,[]), proveedores=load(SUPPLIERS_KEY,[]), compras=load(PURCHASES_KEY,[]), carritoCompra=load(PURCHASE_CART_KEY,[]); let clienteCreditoSeleccionado=null;
+const $=id=>document.getElementById(id); let productos=load(KEY,[]), carrito=load(CART_KEY,[]), ventas=load(SALES_KEY,[]), clientes=load(CLIENTS_KEY,[]), creditos=load(CREDITS_KEY,[]), pagos=load(PAYMENTS_KEY,[]), proveedores=load(SUPPLIERS_KEY,[]), compras=load(PURCHASES_KEY,[]), carritoCompra=load(PURCHASE_CART_KEY,[]); let clienteCreditoSeleccionado=null, vistaCreditos='pendientes',cuentasNube=[];
 function load(k,d){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(d))}catch(e){return d}}
 function store(k,v){localStorage.setItem(k,JSON.stringify(v))}
 function save(){store(KEY,productos);render()}
@@ -134,7 +134,20 @@ async function finishPay(medio){
  if(!carrito.length){$('payMsg').textContent='Agregue al menos un producto.';$('payMsg').className='msg err';return}
  if(carrito.length>4){$('payMsg').textContent='Máximo 4 productos diferentes por venta.';$('payMsg').className='msg err';return}
  if(!validarStockVenta(carrito,'payMsg'))return;
- if(medio==='CREDITO'){$('payMsg').textContent='Créditos compartidos aún no habilitados. No se registró ninguna venta.';$('payMsg').className='msg err';return}
+ if(medio==='CREDITO'){
+  const id=Number($('ventaCliente').value),cli=clientes.find(c=>c.id===id&&clienteActivo(c));
+  if(!cli){$('payMsg').textContent='Seleccione un cliente activo para la venta al crédito.';$('payMsg').className='msg err';return}
+  if(!navigator.onLine||!window.abuelitaCreditosCloud){$('payMsg').textContent='Los créditos requieren conexión a Firebase. No se registró la venta.';$('payMsg').className='msg err';return}
+  ventaEnProceso=true;document.querySelectorAll('[data-pay]').forEach(b=>b.disabled=true);
+  try{
+   const v={id:crypto.randomUUID(),fecha:new Date().toISOString(),medio:'CREDITO',clienteId:id,clienteNombre:cli.nombre,items:JSON.parse(JSON.stringify(carrito))};
+   await window.abuelitaCreditosCloud.registrarCredito(v);
+   carrito=[];store(CART_KEY,carrito);renderCart();await window.abuelitaProductosCloud.actualizar();
+   $('payMsg').textContent='✓ Venta al crédito registrada y compartida con la familia.';$('payMsg').className='msg ok';
+  }catch(e){$('payMsg').textContent='No se registró el crédito: '+e.message;$('payMsg').className='msg err'}
+  finally{ventaEnProceso=false;document.querySelectorAll('[data-pay]').forEach(b=>b.disabled=false)}
+  return;
+ }
  if(!window.abuelitaVentasCloud){$('payMsg').textContent='Espere a que se cargue el módulo de ventas.';$('payMsg').className='msg err';return}
  ventaEnProceso=true;document.querySelectorAll('[data-pay]').forEach(b=>b.disabled=true);
  const items=JSON.parse(JSON.stringify(carrito));const total=items.reduce((a,x)=>a+Number(x.precio)*Number(x.cantidad),0);
@@ -163,60 +176,98 @@ function renderClientes(){
   $('clienteContador').textContent=clientes.length;
   $('listaClientes').innerHTML=clientes.length?clientes.map((c,i)=>`<div class='clientRow ${clienteActivo(c)?'':'inactiveClient'}'><div><b>${esc(c.nombre)}</b><div class='muted'>${clienteActivo(c)?'Activo':'Desactivado'}</div></div><div class='clientActions'><button class='smallBtn' onclick='editarCliente(${i})'>✏️ Modificar</button><button class='smallBtn ${clienteActivo(c)?'dangerBtn':'activeBtn'}' onclick='toggleCliente(${i})'>${clienteActivo(c)?'Desactivar':'Reactivar'}</button></div></div>`).join(''):`<p class='muted'>Aún no hay clientes registrados.</p>`
 }
-function crearCliente(nombre){
+async function crearCliente(nombre){
   nombre=nombre.trim();
   if(!nombre)return {ok:false,msg:'Escriba el nombre del cliente.'};
   if(clientes.some(c=>c.nombre.toLowerCase()===nombre.toLowerCase()))return {ok:false,msg:'Ese cliente ya está registrado.'};
-  let c={id:Date.now(),nombre,activo:true};clientes.push(c);clientes.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));store(CLIENTS_KEY,clientes);return {ok:true,cliente:c}
+  let c={id:Date.now(),nombre,activo:true};try{if(!window.abuelitaCreditosCloud)throw Error('Espere Firebase');await window.abuelitaCreditosCloud.crearCliente(c)}catch(e){return {ok:false,msg:'No se guardó en Firebase: '+e.message}}clientes.push(c);clientes.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));return {ok:true,cliente:c}
 }
-$('guardarCliente').onclick=()=>{let r=crearCliente($('clienteNombre').value);if(!r.ok){$('clienteMsg').textContent=r.msg;$('clienteMsg').className='msg err';return}$('clienteNombre').value='';$('clienteMsg').textContent='✓ Cliente registrado.';$('clienteMsg').className='msg ok';renderClientes();$('clienteNombre').focus()};$('clienteNombre').addEventListener('keydown',e=>{if(e.key==='Enter')$('guardarCliente').click()});
-window.editarCliente=i=>{let c=clientes[i],nuevo=prompt('Modificar nombre del cliente:',c.nombre);if(nuevo===null)return;nuevo=nuevo.trim();if(!nuevo)return alert('El nombre no puede quedar vacío.');if(clientes.some((x,j)=>j!==i&&x.nombre.toLowerCase()===nuevo.toLowerCase()))return alert('Ya existe un cliente con ese nombre.');let anterior=c.nombre;c.nombre=nuevo;creditos.forEach(x=>{if(x.clienteId===c.id)x.clienteNombre=nuevo});ventas.forEach(x=>{if(x.clienteId===c.id)x.clienteNombre=nuevo});store(CLIENTS_KEY,clientes);store(CREDITS_KEY,creditos);store(SALES_KEY,ventas);clientes.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));store(CLIENTS_KEY,clientes);renderClientes();alert(`Cliente actualizado: ${anterior} → ${nuevo}`)};
-window.toggleCliente=i=>{let c=clientes[i],activar=!clienteActivo(c);if(!activar&&!confirm(`¿Desactivar a ${c.nombre}? Ya no aparecerá para nuevos créditos, pero su historial se conservará.`))return;c.activo=activar;store(CLIENTS_KEY,clientes);renderClientes()};
+$('guardarCliente').onclick=async()=>{let r=await crearCliente($('clienteNombre').value);if(!r.ok){$('clienteMsg').textContent=r.msg;$('clienteMsg').className='msg err';return}$('clienteNombre').value='';$('clienteMsg').textContent='✓ Cliente registrado.';$('clienteMsg').className='msg ok';renderClientes();$('clienteNombre').focus()};$('clienteNombre').addEventListener('keydown',e=>{if(e.key==='Enter')$('guardarCliente').click()});
+window.editarCliente=async i=>{let c=clientes[i],nuevo=prompt('Modificar nombre del cliente:',c.nombre);if(nuevo===null)return;nuevo=nuevo.trim();if(!nuevo)return alert('El nombre no puede quedar vacío.');if(clientes.some((x,j)=>j!==i&&x.nombre.toLowerCase()===nuevo.toLowerCase()))return alert('Ya existe un cliente con ese nombre.');let anterior=c.nombre;try{await window.abuelitaCreditosCloud.editarCliente(c.id,{nombre:nuevo})}catch(e){alert('No se guardó: '+e.message);return}c.nombre=nuevo;creditos.forEach(x=>{if(x.clienteId===c.id)x.clienteNombre=nuevo});ventas.forEach(x=>{if(x.clienteId===c.id)x.clienteNombre=nuevo});store(CLIENTS_KEY,clientes);store(CREDITS_KEY,creditos);store(SALES_KEY,ventas);clientes.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));store(CLIENTS_KEY,clientes);renderClientes();alert(`Cliente actualizado: ${anterior} → ${nuevo}`)};
+window.toggleCliente=async i=>{let c=clientes[i],activar=!clienteActivo(c);if(!activar&&!confirm(`¿Desactivar a ${c.nombre}? Ya no aparecerá para nuevos créditos, pero su historial se conservará.`))return;try{await window.abuelitaCreditosCloud.editarCliente(c.id,{activo:activar})}catch(e){alert('No se guardó: '+e.message);return}c.activo=activar;renderClientes()};
 function cargarSelectorClientes(seleccionarId){let activos=clientes.filter(clienteActivo);$('creditoCliente').innerHTML=activos.length?`<option value=''>Seleccione un cliente</option>`+activos.map(c=>`<option value='${c.id}'>${esc(c.nombre)}</option>`).join(''):`<option value=''>No hay clientes activos</option>`;if(seleccionarId)$('creditoCliente').value=String(seleccionarId)}
 function creditoTotalCliente(id){return creditos.filter(c=>c.clienteId===id).reduce((s,c)=>s+Number(c.total||0),0)}
 function pagosTotalCliente(id){return pagos.filter(p=>p.clienteId===id).reduce((s,p)=>s+Number(p.monto||0),0)}
-function saldoCliente(id){return Math.max(0,creditoTotalCliente(id)-pagosTotalCliente(id))}
+function saldoCliente(id){const c=cuentasNube.find(x=>x.clienteId===id);return c?c.saldoCent/100:Math.max(0,creditoTotalCliente(id)-pagosTotalCliente(id))}
 function fechaHora(f){let d=new Date(f);return d.toLocaleDateString('es-PE')+' · '+d.toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'})}
 function renderCreditos(){
- let pendiente=load(CREDIT_PENDING,null);$('creditoPendienteCard').classList.toggle('hidden',!pendiente);
- if(pendiente){$('creditoPendienteDetalle').innerHTML=`<p><b>Total: S/ ${Number(pendiente.total).toFixed(2)}</b></p><p class='muted'>${pendiente.items.map(x=>`${esc(x.nombre)} × ${x.cantidad}`).join(' · ')}</p>`;cargarSelectorClientes()}
- let ids=[...new Set(creditos.map(c=>c.clienteId))], cuentas=ids.map(id=>({id,nombre:(clientes.find(c=>c.id===id)||{}).nombre||creditos.find(c=>c.clienteId===id)?.clienteNombre||'Cliente',saldo:saldoCliente(id)})).filter(x=>x.saldo>0.004).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
- $('listaCreditos').innerHTML=cuentas.length?cuentas.map(x=>`<button class='creditClient' onclick='abrirCreditoCliente(${x.id})'><div><b>${esc(x.nombre)}</b><div class='muted'>Ver detalle y registrar pagos</div></div><div class='creditAmount'>S/ ${x.saldo.toFixed(2)}</div></button>`).join(''):`<p class='muted'>No hay créditos pendientes.</p>`;
+ $('creditoPendienteCard').classList.add('hidden');
+ const cuentas=cuentasNube.filter(x=>vistaCreditos==='pendientes'?x.saldoCent>0:x.saldoCent===0).map(x=>({id:x.clienteId,nombre:clientes.find(c=>c.id===x.clienteId)?.nombre||x.clienteNombre,saldo:x.saldoCent/100})).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+ $('listaCreditos').innerHTML=cuentas.length?cuentas.map(x=>`<button class='creditClient' onclick='abrirCreditoCliente(${x.id})'><div><b>${esc(x.nombre)}</b><div class='muted'>${x.saldo>0?'Ver compras y registrar abonos':'Cancelado · consultar historial y PDF'}</div></div><div class='creditAmount'>${x.saldo>0?'S/ '+x.saldo.toFixed(2):'✓ Cancelado'}</div></button>`).join(''):`<p class='muted'>No hay cuentas ${vistaCreditos==='pendientes'?'pendientes':'canceladas'}.</p>`;
+ document.querySelectorAll('[data-vista-credito]').forEach(b=>{b.classList.toggle('save',b.dataset.vistaCredito===vistaCreditos);b.classList.toggle('secondary',b.dataset.vistaCredito!==vistaCreditos)});
  if(clienteCreditoSeleccionado!==null)renderCreditoDetalle(clienteCreditoSeleccionado)
 }
+document.querySelectorAll('[data-vista-credito]').forEach(b=>b.onclick=()=>{vistaCreditos=b.dataset.vistaCredito;clienteCreditoSeleccionado=null;$('creditoDetalleCard').classList.add('hidden');renderCreditos()});
+window.abuelitaAplicarCreditosCompartidos=(datos)=>{
+ clientes=datos.clientes;creditos=datos.creditos;pagos=datos.pagos;cuentasNube=datos.cuentas;
+ // No sobrescribir el almacenamiento local antiguo: los registros de prueba no se migran.
+ renderClientes();cargarSelectorClientes();cargarSelectorVenta();renderCreditos();
+};
 function renderCreditoDetalle(id){let cliente=clientes.find(c=>c.id===id), primer=creditos.find(c=>c.clienteId===id);if(!cliente&&!primer){clienteCreditoSeleccionado=null;$('creditoDetalleCard').classList.add('hidden');return}clienteCreditoSeleccionado=id;let nombre=cliente?cliente.nombre:primer.clienteNombre,saldo=saldoCliente(id);$('creditoDetalleNombre').textContent=nombre;$('creditoDetalleSaldo').textContent=saldo.toFixed(2);$('creditoDetalleCard').classList.remove('hidden');
  let mov=[...creditos.filter(c=>c.clienteId===id).map(c=>({fecha:c.fecha,tipo:'Crédito',monto:Number(c.total),items:c.items||[]})),...pagos.filter(p=>p.clienteId===id).map(p=>({fecha:p.fecha,tipo:'Abono',monto:-Number(p.monto),items:[]}))].sort((a,b)=>new Date(a.fecha)-new Date(b.fecha)), running=0;
  $('creditoMovimientos').innerHTML=mov.length?mov.map(m=>{running+=m.monto;return `<div class='movement'><div><b>${m.tipo}</b><div class='muted'>${fechaHora(m.fecha)}</div>${m.items.length?`<div class='movementItems muted'>${m.items.map(x=>`${esc(x.nombre)} × ${x.cantidad}`).join(' · ')}</div>`:''}</div><div class='movementAmount'>${m.monto<0?'− ':'+ '}S/ ${Math.abs(m.monto).toFixed(2)}<div class='muted'>Saldo S/ ${Math.max(0,running).toFixed(2)}</div></div></div>`}).join(''):`<p class='muted'>Sin movimientos.</p>`;
  $('pagarTodoCredito').disabled=saldo<=0;$('abonarCredito').disabled=saldo<=0
 }
+
+// V1.43: Estado de cuenta imprimible para entregar como PDF al cliente.
+// No envía información automáticamente por WhatsApp ni altera registros.
+window.generarEstadoCuentaCliente=()=>{
+ const id=clienteCreditoSeleccionado;
+ if(id===null)return alert('Seleccione primero un cliente.');
+ const cli=clientes.find(c=>c.id===id);
+ const movCred=creditos.filter(c=>c.clienteId===id).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+ const movPag=pagos.filter(p=>p.clienteId===id).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+ if(!movCred.length)return alert('El cliente no tiene compras al crédito registradas.');
+ const nombre=cli?.nombre||movCred[0].clienteNombre||'Cliente';
+ const fmt=n=>'S/ '+Number(n||0).toFixed(2);
+ const filas=movCred.map(c=>{
+  const items=(c.items||[]).map(i=>`<tr><td>${esc(fechaHora(c.fecha))}</td><td>${esc(i.nombre)}</td><td class="numero">${Number(i.cantidad||0)}</td><td class="numero">${fmt(i.precio)}</td><td class="numero">${fmt(Number(i.cantidad||0)*Number(i.precio||0))}</td></tr>`).join('');
+  return items||`<tr><td>${esc(fechaHora(c.fecha))}</td><td>Compra al crédito</td><td>—</td><td>—</td><td class="numero">${fmt(c.total)}</td></tr>`;
+ }).join('');
+ const abonos=movPag.map(p=>`<tr><td>${esc(fechaHora(p.fecha))}</td><td class="numero">${fmt(p.monto)}</td></tr>`).join('')||'<tr><td colspan="2">Sin abonos registrados</td></tr>';
+ const total=creditoTotalCliente(id),abonado=pagosTotalCliente(id);
+ const documento=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Estado de cuenta - ${esc(nombre)}</title><style>body{font:13px Arial,sans-serif;color:#222;margin:28px}h1{text-align:center;font-size:23px;margin-bottom:3px}h2{font-size:15px;margin-top:22px}p{text-align:center;margin-top:0}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left}th{background:#eee}.numero{text-align:right}.totales{margin-top:22px;margin-left:auto;max-width:270px}.totales div{display:flex;justify-content:space-between;padding:7px;border-bottom:1px solid #ddd}.saldo{font-size:17px;font-weight:bold}.nota{font-size:11px;color:#555;margin-top:25px}@page{size:A4;margin:14mm}@media print{body{margin:0}}</style></head><body><h1>BODEGA LA ABUELITA</h1><p>ESTADO DE CUENTA DE CRÉDITOS</p><strong>Cliente:</strong> ${esc(nombre)}<br><strong>Fecha de emisión:</strong> ${esc(new Date().toLocaleString('es-PE'))}<h2>Detalle de compras al crédito</h2><table><thead><tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Importe</th></tr></thead><tbody>${filas}</tbody></table><h2>Abonos realizados</h2><table><thead><tr><th>Fecha</th><th>Importe</th></tr></thead><tbody>${abonos}</tbody></table><div class="totales"><div><span>Total compras</span><b>${fmt(total)}</b></div><div><span>Total abonado</span><b>${fmt(abonado)}</b></div><div class="saldo"><span>SALDO</span><span>${fmt(Math.max(0,total-abonado))}</span></div></div><div class="nota">Documento informativo elaborado con los movimientos compartidos en Firebase. Revise los datos antes de compartirlos.</div><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));</script></body></html>`;
+ const w=window.open('','_blank');
+ if(!w)return alert('El navegador bloqueó la ventana. Permita ventanas emergentes para generar el PDF.');
+ w.document.open();w.document.write(documento);w.document.close();
+};
+
 window.abrirCreditoCliente=id=>{renderCreditoDetalle(id);setTimeout(()=>$('creditoDetalleCard').scrollIntoView({behavior:'smooth',block:'start'}),0)};
 $('cerrarCreditoDetalle').onclick=()=>{clienteCreditoSeleccionado=null;$('creditoDetalleCard').classList.add('hidden');$('pagoParcialBox').classList.add('hidden')};
 $('abonarCredito').onclick=()=>{if(clienteCreditoSeleccionado===null)return;$('pagoParcialBox').classList.toggle('hidden');if(!$('pagoParcialBox').classList.contains('hidden'))setTimeout(()=>$('montoAbono').focus(),0)};
-function registrarPago(monto){let id=clienteCreditoSeleccionado,saldo=saldoCliente(id);monto=Number(monto);if(!(monto>0)){ $('pagoCreditoMsg').textContent='Ingrese un monto válido.';$('pagoCreditoMsg').className='msg err';return false}if(monto>saldo+0.001){$('pagoCreditoMsg').textContent=`El pago no puede superar el saldo de S/ ${saldo.toFixed(2)}.`;$('pagoCreditoMsg').className='msg err';return false}let c=clientes.find(x=>x.id===id),n=c?c.nombre:(creditos.find(x=>x.clienteId===id)||{}).clienteNombre;pagos.push({id:Date.now(),clienteId:id,clienteNombre:n,monto:Number(monto.toFixed(2)),fecha:new Date().toISOString()});store(PAYMENTS_KEY,pagos);$('montoAbono').value='';$('pagoParcialBox').classList.add('hidden');$('pagoCreditoMsg').textContent=`✓ Pago de S/ ${monto.toFixed(2)} registrado. Saldo: S/ ${saldoCliente(id).toFixed(2)}`;$('pagoCreditoMsg').className='msg ok';renderCreditos();return true}
+async function registrarPago(monto){
+ const id=clienteCreditoSeleccionado,saldo=saldoCliente(id);monto=Number(monto);
+ if(!Number.isFinite(monto)||monto<=0||Math.round(monto*100)!==monto*100 && Math.abs(Math.round(monto*100)-monto*100)>0.00001){$('pagoCreditoMsg').textContent='Ingrese un monto válido con máximo dos decimales.';$('pagoCreditoMsg').className='msg err';return false}
+ if(monto>saldo+0.001){$('pagoCreditoMsg').textContent=`El pago no puede superar el saldo de S/ ${saldo.toFixed(2)}.`;$('pagoCreditoMsg').className='msg err';return false}
+ const btn=$('guardarAbono');btn.disabled=true;$('pagarTodoCredito').disabled=true;
+ try{if(!window.abuelitaCreditosCloud||!navigator.onLine)throw Error('Se requiere internet');await window.abuelitaCreditosCloud.registrarPago({id:crypto.randomUUID(),clienteId:id,montoCent:Math.round(monto*100),fecha:new Date().toISOString()});$('montoAbono').value='';$('pagoParcialBox').classList.add('hidden');$('pagoCreditoMsg').textContent=`✓ Abono de S/ ${monto.toFixed(2)} registrado en Firebase.`;$('pagoCreditoMsg').className='msg ok';return true}
+ catch(e){$('pagoCreditoMsg').textContent='No se registró el pago: '+e.message;$('pagoCreditoMsg').className='msg err';return false}
+ finally{btn.disabled=false;$('pagarTodoCredito').disabled=false}
+}
 $('guardarAbono').onclick=()=>registrarPago(parseFloat($('montoAbono').value.replace(',','.')));$('montoAbono').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('guardarAbono').click()}});
 $('pagarTodoCredito').onclick=()=>{if(clienteCreditoSeleccionado===null)return;let saldo=saldoCliente(clienteCreditoSeleccionado);if(saldo<=0)return;if(confirm(`¿Registrar el pago total de S/ ${saldo.toFixed(2)}?`))registrarPago(saldo)};
 $('nuevoClienteCredito').onclick=()=>{$('altaClienteCredito').classList.toggle('hidden');if(!$('altaClienteCredito').classList.contains('hidden'))setTimeout(()=>$('creditoNuevoNombre').focus(),0)};
-function guardarClienteRapido(){let r=crearCliente($('creditoNuevoNombre').value);if(!r.ok){$('creditoClienteMsg').textContent=r.msg;$('creditoClienteMsg').className='msg err';return}$('creditoNuevoNombre').value='';$('creditoClienteMsg').textContent=`✓ ${r.cliente.nombre} agregado y seleccionado.`;$('creditoClienteMsg').className='msg ok';cargarSelectorClientes(r.cliente.id);renderClientes();setTimeout(()=>$('altaClienteCredito').classList.add('hidden'),700)}
+async function guardarClienteRapido(){let r=await crearCliente($('creditoNuevoNombre').value);if(!r.ok){$('creditoClienteMsg').textContent=r.msg;$('creditoClienteMsg').className='msg err';return}$('creditoNuevoNombre').value='';$('creditoClienteMsg').textContent=`✓ ${r.cliente.nombre} agregado y seleccionado.`;$('creditoClienteMsg').className='msg ok';cargarSelectorClientes(r.cliente.id);renderClientes();setTimeout(()=>$('altaClienteCredito').classList.add('hidden'),700)}
 $('guardarNuevoClienteCredito').onclick=guardarClienteRapido;$('creditoNuevoNombre').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();guardarClienteRapido()}});
-$('asignarCredito').onclick=()=>{let pendiente=load(CREDIT_PENDING,null),id=Number($('creditoCliente').value),cliente=clientes.find(c=>c.id===id&&clienteActivo(c));if(!pendiente||!cliente){$('creditoMsg').textContent='Seleccione un cliente.';$('creditoMsg').className='msg err';return}if(!descontarStock(pendiente.items))return;let credito={...pendiente,clienteId:cliente.id,clienteNombre:cliente.nombre,creditoId:pendiente.id||Date.now()};creditos.push(credito);ventas.push({...pendiente,clienteId:cliente.id,clienteNombre:cliente.nombre});store(CREDITS_KEY,creditos);store(SALES_KEY,ventas);store(KEY,productos);localStorage.removeItem(CREDIT_PENDING);carrito=[];store(CART_KEY,carrito);renderCart();render();renderCreditos();$('creditoMsg').textContent=`✓ Crédito guardado a nombre de ${cliente.nombre}.`;$('creditoMsg').className='msg ok'};
+$('asignarCredito').onclick=()=>alert('Registre la venta al crédito desde VENTA → CRÉDITO.');
 $('exportar').onclick=async()=>{
  const estado=$('backupMsg');const boton=$('exportar');boton.disabled=true;estado.textContent='Consultando los datos de Firebase…';estado.className='msg';
  try{
   if(!window.abuelitaRespaldoCloud)throw Error('Espere la conexión con Firebase.');
   const nube=await window.abuelitaRespaldoCloud.exportar();
-  const backup={app:'La Abuelita',schemaVersion:2,fecha:new Date().toISOString(),origen:'firebase-y-datos-locales',nube,local:{clientes,creditos,pagos,carrito,carritoCompra}};
+  const backup={app:'La Abuelita',schemaVersion:3,fecha:new Date().toISOString(),origen:'firebase',nube,local:{carrito,carritoCompra}};
   const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download=`LA_ABUELITA_RESPALDO_${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-  estado.textContent=`✓ Respaldo descargado: ${nube.productos.length} productos, ${nube.ventas.length} ventas, ${nube.compras.length} compras y ${nube.proveedores.length} proveedores. Créditos y clientes locales se incluyen por separado.`;estado.className='msg ok';
+  estado.textContent=`✓ Respaldo descargado: ${nube.productos.length} productos, ${nube.ventas.length} ventas, ${nube.compras.length} compras y ${nube.proveedores.length} proveedores. Clientes, créditos y abonos compartidos incluidos.`;estado.className='msg ok';
  }catch(e){estado.textContent='No se pudo descargar el respaldo: '+e.message;estado.className='msg err'}finally{boton.disabled=false}
 };
-$('importar').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let b=JSON.parse(await f.text());if(b.schemaVersion===2){alert('Esta copia contiene datos de Firebase. Por seguridad, la restauración automática de la nube todavía no está habilitada. No se ha modificado ningún dato.');return}if(!Array.isArray(b.productos))throw 0;if(!confirm(`Se restaurarán ${b.productos.length} productos. ¿Continuar?`))return;productos=b.productos;clientes=Array.isArray(b.clientes)?b.clientes:[];ventas=Array.isArray(b.ventas)?b.ventas:[];creditos=Array.isArray(b.creditos)?b.creditos:[];pagos=Array.isArray(b.pagos)?b.pagos:[];proveedores=Array.isArray(b.proveedores)?b.proveedores:[];compras=Array.isArray(b.compras)?b.compras:[];carrito=Array.isArray(b.carrito)?b.carrito:[];carritoCompra=Array.isArray(b.carritoCompra)?b.carritoCompra:[];store(KEY,productos);store(CLIENTS_KEY,clientes);store(SALES_KEY,ventas);store(CREDITS_KEY,creditos);store(PAYMENTS_KEY,pagos);store(SUPPLIERS_KEY,proveedores);store(PURCHASES_KEY,compras);store(CART_KEY,carrito);store(PURCHASE_CART_KEY,carritoCompra);if(b.creditoPendiente)store(CREDIT_PENDING,b.creditoPendiente);else localStorage.removeItem(CREDIT_PENDING);render();renderCart();renderClientes();$('backupMsg').textContent='✓ Copia restaurada correctamente.';$('backupMsg').className='msg ok'}catch(err){$('backupMsg').textContent='La copia no es válida.';$('backupMsg').className='msg err'}e.target.value=''};
+$('importar').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let b=JSON.parse(await f.text());if(b.schemaVersion>=2){alert('Esta copia contiene datos de Firebase. Por seguridad, la restauración automática de la nube todavía no está habilitada. No se ha modificado ningún dato.');return}if(!Array.isArray(b.productos))throw 0;if(!confirm(`Se restaurarán ${b.productos.length} productos. ¿Continuar?`))return;productos=b.productos;clientes=Array.isArray(b.clientes)?b.clientes:[];ventas=Array.isArray(b.ventas)?b.ventas:[];creditos=Array.isArray(b.creditos)?b.creditos:[];pagos=Array.isArray(b.pagos)?b.pagos:[];proveedores=Array.isArray(b.proveedores)?b.proveedores:[];compras=Array.isArray(b.compras)?b.compras:[];carrito=Array.isArray(b.carrito)?b.carrito:[];carritoCompra=Array.isArray(b.carritoCompra)?b.carritoCompra:[];store(KEY,productos);store(CLIENTS_KEY,clientes);store(SALES_KEY,ventas);store(CREDITS_KEY,creditos);store(PAYMENTS_KEY,pagos);store(SUPPLIERS_KEY,proveedores);store(PURCHASES_KEY,compras);store(CART_KEY,carrito);store(PURCHASE_CART_KEY,carritoCompra);if(b.creditoPendiente)store(CREDIT_PENDING,b.creditoPendiente);else localStorage.removeItem(CREDIT_PENDING);render();renderCart();renderClientes();$('backupMsg').textContent='✓ Copia restaurada correctamente.';$('backupMsg').className='msg ok'}catch(err){$('backupMsg').textContent='La copia no es válida.';$('backupMsg').className='msg err'}e.target.value=''};
 render();renderCart();renderClientes();if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 
 
 // Limpieza de pruebas: conserva productos, clientes y el stock actual.
 $('limpiarPruebas').onclick=()=>{
- const ok=confirm('Se borrarán todas las VENTAS, COMPRAS, CRÉDITOS y PAGOS registrados.\n\nLos PRODUCTOS, CLIENTES y el STOCK ACTUAL NO se borrarán.\n\n¿Desea continuar?');
+ const ok=confirm('ATENCIÓN: esta opción solo limpia datos LOCALES de prueba; no borra nada en Firebase.\n\nSe borrarán las VENTAS, COMPRAS, CRÉDITOS y PAGOS LOCALES registrados.\n\nLos PRODUCTOS, CLIENTES y el STOCK ACTUAL NO se borrarán.\n\n¿Desea continuar?');
  if(!ok)return;
  ventas=[]; compras=[]; creditos=[]; pagos=[]; carrito=[]; carritoCompra=[]; clienteCreditoSeleccionado=null;
  store(SALES_KEY,ventas); store(PURCHASES_KEY,compras); store(CREDITS_KEY,creditos); store(PAYMENTS_KEY,pagos); store(CART_KEY,carrito); store(PURCHASE_CART_KEY,carritoCompra);
@@ -284,7 +335,7 @@ $('cCodigo').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();const exacto=p
 function selectorOptions(arr,placeholder){return `<option value=''>${placeholder}</option>`+arr.filter(x=>x.activo!==false).map(x=>`<option value='${x.id}'>${esc(x.nombre)}</option>`).join('')}
 function cargarSelectorVenta(sel){if(!$('ventaCliente'))return;$('ventaCliente').innerHTML=selectorOptions(clientes,'Sin cliente / venta rápida');if(sel)$('ventaCliente').value=String(sel)}
 $('nuevoClienteVenta').onclick=()=>{$('altaClienteVenta').classList.toggle('hidden');if(!$('altaClienteVenta').classList.contains('hidden'))$('ventaNuevoNombre').focus()};
-function altaClienteVenta(){let r=crearCliente($('ventaNuevoNombre').value);if(!r.ok){$('ventaClienteMsg').textContent=r.msg;$('ventaClienteMsg').className='msg err';return}$('ventaNuevoNombre').value='';cargarSelectorVenta(r.cliente.id);renderClientes();$('ventaClienteMsg').textContent='✓ Cliente agregado y seleccionado.';$('ventaClienteMsg').className='msg ok';$('altaClienteVenta').classList.add('hidden')}
+async function altaClienteVenta(){let r=await crearCliente($('ventaNuevoNombre').value);if(!r.ok){$('ventaClienteMsg').textContent=r.msg;$('ventaClienteMsg').className='msg err';return}$('ventaNuevoNombre').value='';cargarSelectorVenta(r.cliente.id);renderClientes();$('ventaClienteMsg').textContent='✓ Cliente agregado y seleccionado.';$('ventaClienteMsg').className='msg ok';$('altaClienteVenta').classList.add('hidden')}
 $('guardarNuevoClienteVenta').onclick=altaClienteVenta;$('ventaNuevoNombre').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();altaClienteVenta()}});
 function proveedorActivo(p){return p.activo!==false}
 async function crearProveedor(nombre){
