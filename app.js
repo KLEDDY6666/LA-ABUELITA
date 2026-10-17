@@ -286,15 +286,36 @@ function cargarSelectorProveedores(sel){$('compraProveedor').innerHTML=selectorO
 $('nuevoProveedorCompra').onclick=()=>{$('altaProveedorCompra').classList.toggle('hidden');if(!$('altaProveedorCompra').classList.contains('hidden'))$('compraNuevoProveedor').focus()};
 function altaProveedorCompra(){let r=crearProveedor($('compraNuevoProveedor').value);if(!r.ok){$('compraProveedorMsg').textContent=r.msg;$('compraProveedorMsg').className='msg err';return}$('compraNuevoProveedor').value='';cargarSelectorProveedores(r.proveedor.id);renderProveedores();$('compraProveedorMsg').textContent='✓ Proveedor agregado y seleccionado.';$('compraProveedorMsg').className='msg ok';$('altaProveedorCompra').classList.add('hidden')}
 $('guardarNuevoProveedorCompra').onclick=altaProveedorCompra;
-function agregarCompra(p){let r=carritoCompra.find(x=>x.codigo===p.codigo);if(r)r.cantidad++;else carritoCompra.push({codigo:p.codigo,nombre:p.nombre,cantidad:1});store(PURCHASE_CART_KEY,carritoCompra);$('compraBuscar').value='';ocultarSugerencias($('compraSugerencias'));renderCompra();$('compraBuscar').focus()}
+function agregarCompra(p){if(!carritoCompra.some(x=>x.codigo===p.codigo)&&carritoCompra.length>=4){$('compraMsg').textContent='Máximo 4 productos diferentes por compra en esta versión.';$('compraMsg').className='msg err';return}let r=carritoCompra.find(x=>x.codigo===p.codigo);if(r)r.cantidad++;else carritoCompra.push({codigo:p.codigo,nombre:p.nombre,cantidad:1});store(PURCHASE_CART_KEY,carritoCompra);$('compraBuscar').value='';ocultarSugerencias($('compraSugerencias'));renderCompra();$('compraBuscar').focus()}
 function renderCompra(){$('carritoCompra').innerHTML=carritoCompra.length?carritoCompra.map((x,i)=>`<div class='cartrow'><div class='cartinfo'><b>${esc(x.nombre)}</b><div class='muted'>Código ${esc(x.codigo)}</div></div><div class='qty'><button onclick='cambiarCompra(${i},-1)'>−</button><strong>${x.cantidad}</strong><button onclick='cambiarCompra(${i},1)'>+</button><button class='trash' onclick='quitarCompra(${i})'>🗑️</button></div></div>`).join(''):`<p class='muted'>Aún no hay productos en esta compra.</p>`}
 window.cambiarCompra=(i,d)=>{let x=carritoCompra[i];if(!x)return;x.cantidad+=d;if(x.cantidad<=0)carritoCompra.splice(i,1);store(PURCHASE_CART_KEY,carritoCompra);renderCompra()};window.quitarCompra=i=>{carritoCompra.splice(i,1);store(PURCHASE_CART_KEY,carritoCompra);renderCompra()};
 $('compraBuscar').oninput=()=>{let q=$('compraBuscar').value.trim();if(!q)return ocultarSugerencias($('compraSugerencias'));let ex=productoCodigoExacto(q);if(ex)return agregarCompra(ex);pintarSugerencias($('compraSugerencias'),coincidenciasProducto(q),agregarCompra)};
 $('compraBuscar').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();let ex=productoCodigoExacto($('compraBuscar').value);if(ex)return agregarCompra(ex);let a=coincidenciasProducto($('compraBuscar').value);if(a.length===1)agregarCompra(a[0])}};
-$('guardarCompra').onclick=()=>{let pid=Number($('compraProveedor').value),prov=proveedores.find(p=>p.id===pid&&proveedorActivo(p));if(!prov){$('guardarCompraMsg').textContent='Seleccione un proveedor.';$('guardarCompraMsg').className='msg err';return}if(!carritoCompra.length){$('guardarCompraMsg').textContent='Agregue al menos un producto.';$('guardarCompraMsg').className='msg err';return}carritoCompra.forEach(x=>{let p=productos.find(y=>y.codigo===x.codigo);if(p)p.cantidad+=x.cantidad});compras.push({id:Date.now(),fecha:new Date().toISOString(),proveedorId:prov.id,proveedorNombre:prov.nombre,items:JSON.parse(JSON.stringify(carritoCompra))});store(KEY,productos);store(PURCHASES_KEY,compras);carritoCompra=[];store(PURCHASE_CART_KEY,carritoCompra);render();renderCompra();$('guardarCompraMsg').textContent='✓ Compra registrada y stock actualizado.';$('guardarCompraMsg').className='msg ok'};
+$('guardarCompra').onclick=async()=>{
+ const aviso=$('guardarCompraMsg'),boton=$('guardarCompra');
+ const pid=Number($('compraProveedor').value),prov=proveedores.find(p=>p.id===pid&&proveedorActivo(p));
+ if(!prov){aviso.textContent='Seleccione un proveedor.';aviso.className='msg err';return}
+ if(!carritoCompra.length){aviso.textContent='Agregue al menos un producto.';aviso.className='msg err';return}
+ if(carritoCompra.length>4){aviso.textContent='Por seguridad, máximo 4 productos distintos por compra. Registre otra compra para el resto.';aviso.className='msg err';return}
+ if(!navigator.onLine){aviso.textContent='Las compras compartidas requieren internet. El carrito se conserva.';aviso.className='msg err';return}
+ if(!window.abuelitaComprasCloud){aviso.textContent='Espere la conexión con Firebase.';aviso.className='msg err';return}
+ const compra={id:'C'+Date.now()+'_'+Math.random().toString(36).slice(2,8),fecha:new Date().toISOString(),proveedorNombre:prov.nombre,items:carritoCompra.map(x=>({codigo:String(x.codigo),cantidad:Number(x.cantidad)}))};
+ boton.disabled=true;aviso.textContent='Guardando compra en Firebase…';aviso.className='msg';
+ try{
+  await window.abuelitaComprasCloud.registrar(compra);
+  carritoCompra=[];store(PURCHASE_CART_KEY,carritoCompra);renderCompra();
+  aviso.textContent='✓ Compra confirmada en Firebase. Existencias actualizadas para toda la familia.';aviso.className='msg ok';
+ }catch(e){aviso.textContent='No se registró la compra: '+(e.message||e);aviso.className='msg err'}
+ finally{boton.disabled=false}
+};
 const nombresVendedoresCompartidos = Object.create(null);
 window.abuelitaAplicarNombresVendedores = function(nombres){Object.assign(nombresVendedoresCompartidos,nombres);if(!$('movimientos').classList.contains('hidden'))renderMovimientos()};
 function nombreVendedor(v){const uid=String(v.registradoPor||'');return uid?(nombresVendedoresCompartidos[uid]||'Consultando vendedor…'):'Sin identificar (venta anterior)'}
+window.abuelitaAplicarComprasCompartidas=function(lista){
+ const locales=load(PURCHASES_KEY,[]).filter(c=>!c.origenFirebase);
+ compras=[...locales,...lista.map(c=>({...c,origenFirebase:true}))];
+ if($('movTipo')?.value==='compras')renderMovimientos();
+};
 function renderMovimientos(){if(!$('listaMovimientos'))return;let tipo=$('movTipo').value,desde=$('movDesde').value,hasta=$('movHasta').value,arr=tipo==='ventas'?ventas:compras;arr=arr.filter(x=>{let d=x.fecha.slice(0,10);return(!desde||d>=desde)&&(!hasta||d<=hasta)}).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));let total=tipo==='ventas'?arr.reduce((s,x)=>s+Number(x.total||0),0):arr.length;$('movResumen').innerHTML=tipo==='ventas'?`<b>${arr.length}</b> venta(s) · Total S/ <b>${total.toFixed(2)}</b>`:`<b>${arr.length}</b> compra(s) registrada(s)`;resumenVentasV136(arr);$('listaMovimientos').innerHTML=arr.length?arr.map(x=>`<div class='movement'><div><b>${fechaHora(x.fecha)}</b><div>${tipo==='ventas'?(x.clienteNombre?esc(x.clienteNombre):'Sin cliente'):`Proveedor: ${esc(x.proveedorNombre||'')}`}</div>${tipo==='ventas'?`<div class='movementSeller'>👤 Vendido por: <b>${esc(nombreVendedor(x))}</b></div>`:''}<div class='movementItems'>${(x.items||[]).map(i=>`${esc(i.nombre)} × ${i.cantidad}`).join(' · ')}</div></div><div class='movementAmount'>${tipo==='ventas'?`${esc(x.medio)}<br>S/ ${Number(x.total||0).toFixed(2)}`:`${(x.items||[]).reduce((s,i)=>s+Number(i.cantidad||0),0)} unid.`}</div></div>`).join(''):`<p class='muted'>No hay movimientos para el periodo seleccionado.</p>`}
 
 // V1.36: resumen por vendedor y medio de pago; respeta los filtros de fecha existentes.
