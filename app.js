@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id); let productos=load(KEY,[]), carrito=loa
 function load(k,d){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(d))}catch(e){return d}}
 function store(k,v){localStorage.setItem(k,JSON.stringify(v))}
 function save(){store(KEY,productos);render()}
-const screens=['home','administracion','clientes','proveedores','movimientos','productos','registroRapido','venta','compra','consulta','credito','datos','permisos','placeholder'];
+const screens=['home','administracion','clientes','proveedores','movimientos','productos','registroRapido','venta','compra','consulta','credito','datos','permisos','homenaje','placeholder'];
 function show(id){screens.forEach(x=>$(x).classList.add('hidden'));$(id).classList.remove('hidden');if(id==='clientes')renderClientes();if(id==='proveedores')renderProveedores();if(id==='movimientos')renderMovimientos();if(id==='credito')renderCreditos();if(id==='venta')cargarSelectorVenta();if(id==='compra'){cargarSelectorProveedores();renderCompra()}}
 function go(x){if(window.abuelitaPermitePantalla && !window.abuelitaPermitePantalla(x)){alert('Tu cuenta no tiene permiso para abrir este módulo.');return}if(screens.includes(x)){show(x);if(x==='productos'){limpiarEdicionProducto();render();$('buscar').focus()}if(x==='registroRapido'){limpiarRegistroRapido();setTimeout(()=>$('qCodigo').focus(),0)}if(x==='venta'){renderCart();$('vCodigo').focus()}if(x==='consulta'){setTimeout(()=>$('cCodigo').focus(),0)}}else{$('ptitle').textContent=x.toUpperCase();show('placeholder')}}
 document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));

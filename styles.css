@@ -28,3 +28,30 @@
 
 /* V1.40: Configuración ocupa siempre toda la fila, incluso en móviles. */
 #home .adminTile{grid-column:1/-1;}
+
+/* V1.47 - Ajuste seguro de la marca de agua */
+html {
+  background: #f6f2ec;
+}
+
+body {
+  background: transparent;
+  isolation: isolate;
+  position: relative;
+}
+
+#homenajeFondo {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+#homenaje .card,
+.screen .card,
+.tile {
+  background-color: #fff;
+}

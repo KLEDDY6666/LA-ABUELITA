@@ -1,0 +1,294 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function activo(){return request.auth != null && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.estado == 'activo' && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol in ['admin','usuario'];}
+  function admin(){return activo() && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin';}
+  function permiso(modulo){return admin() || (activo() && (!('permisos' in get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data) || get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.permisos.get(modulo,true) == true));}
+  function permisoConteo(){return admin() || (activo() && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.get('permisos',{}).get('conteo',false) == true);}
+  function permisosValidos(p){return p is map && p.keys().hasOnly(['consulta','ventas','registro','productos','compras','creditos','reportes','conteo']) && p.keys().hasAll(['consulta','ventas','registro','productos','compras','creditos','reportes','conteo']) && p.consulta is bool && p.ventas is bool && p.registro is bool && p.productos is bool && p.compras is bool && p.creditos is bool && p.reportes is bool && p.conteo is bool;}
+  function compraRef(id){return /databases/$(database)/documents/compras/$(id);}
+  function ventaRef(id){return /databases/$(database)/documents/ventas/$(id);}
+  function cuentaRef(id){return /databases/$(database)/documents/cuentas/$(id);}
+  function pagoRef(id){return /databases/$(database)/documents/pagos/$(id);}
+  function clienteRef(id){return /databases/$(database)/documents/clientes/$(id);}
+  function productoRef(codigo){return /databases/$(database)/documents/productos/$(codigo);}
+  function inventarioRef(){return /databases/$(database)/documents/configuracion/inventarioInicial;}
+  function inventarioEnProceso(){return exists(inventarioRef()) && get(inventarioRef()).data.estado == 'en_proceso';}
+  function sinConteo(p){return !('contadoEn' in p) || p.contadoEn == null;}
+  function movimientoAntesDeConteo(p,fecha){return inventarioEnProceso() && (sinConteo(p) || (p.contadoEn is string && fecha < p.contadoEn));}
+  function stockDespuesVenta(antes,despues,codigo,v){
+   return movimientoAntesDeConteo(antes,v.fecha)
+    ? despues == antes
+    : despues.cantidad == antes.cantidad-v.cantidades[codigo]
+      && despues.ultimaVentaId == v.id
+      && despues.diff(antes).affectedKeys().hasOnly(['cantidad','ultimaVentaId']);
+  }
+  function stockDespuesCompra(antes,despues,codigo,c){
+   return movimientoAntesDeConteo(antes,c.fecha)
+    ? despues == antes
+    : despues.cantidad == antes.cantidad+c.cantidades[codigo]
+      && despues.ultimaCompraId == c.id
+      && despues.diff(antes).affectedKeys().hasOnly(['cantidad','ultimaCompraId']);
+  }
+  function fechaIso(f){return f is string && f.size() == 24 && f.matches('\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z');}
+  // Evita fechar un conteo a voluntad y fabricar ventas con fechas futuras.
+  function fechaConteoActual(f){return fechaIso(f) && timestamp.value(f) <= request.time + duration.value(5,'m') && timestamp.value(f) >= request.time - duration.value(5,'m');}
+  function fechaMovimientoPermitida(f){return fechaIso(f) && timestamp.value(f) <= request.time + duration.value(5,'m')
+    // Impide que ventas, compras y pagos de prueba pendientes reaparezcan tras la limpieza inicial.
+    && (!exists(inventarioRef()) || (get(inventarioRef()).data.iniciadoEn is string
+      && fechaIso(get(inventarioRef()).data.iniciadoEn)
+      && timestamp.value(f) >= timestamp.value(get(inventarioRef()).data.iniciadoEn)));}
+
+  function itemValido(v,i){
+   let item=v.items[i];
+   let antes=get(productoRef(item.codigo)).data;
+   let despues=getAfter(productoRef(item.codigo)).data;
+   return item.codigo is string && item.codigo.size()>0
+    && item.cantidad is int && item.cantidad>0
+    && v.cantidades[item.codigo]==item.cantidad
+    && item.nombre==antes.nombre && item.precio==antes.precio
+    && antes.cantidad is int
+    && (inventarioEnProceso() || antes.cantidad>=item.cantidad)
+    && stockDespuesVenta(antes,despues,item.codigo,v);
+  }
+  function itemCreditoValido(v,i){return itemValido(v,i);}
+  function lineaCredito(v,i){return v.items.size()<=i || itemCreditoValido(v,i);}
+  function compraItemValido(c,i){
+   let item=c.items[i];
+   let antes=get(productoRef(item.codigo)).data;
+   let despues=getAfter(productoRef(item.codigo)).data;
+   return item.codigo is string && item.codigo.size()>0
+    && item.cantidad is int && item.cantidad>0
+    && c.cantidades[item.codigo]==item.cantidad
+    && item.nombre==antes.nombre
+    && antes.cantidad is int
+    && (inventarioEnProceso() || antes.cantidad>=0)
+    && stockDespuesCompra(antes,despues,item.codigo,c);
+  }
+  function compraLinea(c,i){return c.items.size()<=i || compraItemValido(c,i);}
+  function linea(v,i){return v.items.size()<=i || itemValido(v,i);}
+  function subtotal(v,i){return v.items.size()>i ? v.items[i].precio*v.items[i].cantidad : 0;}
+  
+  // V1.47 - Homenaje a La Abuelita
+  match /configuracion/homenaje {
+    allow read: if activo();
+
+    allow create, update: if admin()
+      && request.resource.data.keys().hasOnly([
+        'imagen', 'opacidad', 'visible', 'actualizadoPor'
+      ])
+      && request.resource.data.keys().hasAll([
+        'imagen', 'opacidad', 'visible', 'actualizadoPor'
+      ])
+      && request.resource.data.imagen is string
+      && request.resource.data.imagen.size() <= 180000
+      && request.resource.data.imagen.matches('data:image/webp;base64,[A-Za-z0-9+/=]+')
+      && request.resource.data.opacidad is int
+      && request.resource.data.opacidad >= 2
+      && request.resource.data.opacidad <= 15
+      && request.resource.data.visible is bool
+      && request.resource.data.actualizadoPor == request.auth.uid;
+
+    allow delete: if false;
+  }
+
+  match /configuracion/inventarioInicial {
+   allow read: if activo();
+   allow create,update,delete: if false; // Activación y cierre solo mediante procedimiento administrativo controlado.
+  }
+  match /usuarios/{uid}{
+   allow get: if activo(); // Permite identificar al vendedor desde las cuatro cuentas.
+   allow list: if admin();
+   allow create,delete: if false;
+   allow update: if admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['permisos']) && permisosValidos(request.resource.data.permisos) && resource.data.rol == 'usuario';
+  }
+  match /productos/{codigo}{
+   allow read: if activo();
+   allow create: if permiso('registro') && request.resource.data.keys().hasOnly(['codigo','nombre','precio','cantidad','creado','importadoPor','contadoEn','contadoPor'])
+    && request.resource.data.keys().hasAll(['codigo','nombre','precio','cantidad','creado','importadoPor'])
+    && request.resource.data.codigo==codigo && request.resource.data.codigo is string
+    && request.resource.data.nombre is string && request.resource.data.nombre.size()>0
+    && request.resource.data.precio is number && request.resource.data.precio>=0
+    && request.resource.data.cantidad is int && request.resource.data.cantidad>=0
+    && (inventarioEnProceso()
+      ? ((request.resource.data.cantidad==0 && !('contadoEn' in request.resource.data) && !('contadoPor' in request.resource.data))
+         || (permisoConteo() && request.resource.data.contadoEn is string
+          && request.resource.data.contadoPor==request.auth.uid
+          && fechaConteoActual(request.resource.data.contadoEn)))
+      : (!('contadoEn' in request.resource.data) && !('contadoPor' in request.resource.data)))
+    && request.resource.data.creado is string && request.resource.data.importadoPor==request.auth.uid;
+   allow update: if (
+    permisoConteo() && inventarioEnProceso() && sinConteo(resource.data)
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cantidad','contadoEn','contadoPor'])
+    && request.resource.data.diff(resource.data).affectedKeys().hasAll(['contadoEn','contadoPor'])
+    && request.resource.data.cantidad is int && request.resource.data.cantidad>=0
+    && request.resource.data.contadoEn is string
+    && request.resource.data.contadoPor==request.auth.uid
+    && fechaConteoActual(request.resource.data.contadoEn)
+   ) || (
+    permiso('productos') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(inventarioEnProceso() ? ['nombre','precio'] : ['nombre','precio','cantidad'])
+    && request.resource.data.nombre is string && request.resource.data.nombre.size()>0
+    && request.resource.data.precio is number && request.resource.data.precio>=0
+    && request.resource.data.cantidad is int && (inventarioEnProceso() || request.resource.data.cantidad>=0)
+   ) || (
+    (permiso('ventas') || permiso('creditos')) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cantidad','ultimaVentaId'])
+    && request.resource.data.ultimaVentaId is string
+    && request.resource.data.cantidad is int && (inventarioEnProceso() || request.resource.data.cantidad>=0)
+    && request.resource.data.cantidad<resource.data.cantidad
+    && !movimientoAntesDeConteo(resource.data,getAfter(ventaRef(request.resource.data.ultimaVentaId)).data.fecha)
+    && !exists(ventaRef(request.resource.data.ultimaVentaId))
+    && getAfter(ventaRef(request.resource.data.ultimaVentaId)).data.registradoPor==request.auth.uid
+    && getAfter(ventaRef(request.resource.data.ultimaVentaId)).data.cantidades[codigo] == resource.data.cantidad-request.resource.data.cantidad
+   )
+   || (
+    permiso('compras') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cantidad','ultimaCompraId'])
+    && request.resource.data.ultimaCompraId is string
+    && request.resource.data.cantidad is int && request.resource.data.cantidad>resource.data.cantidad
+    && !movimientoAntesDeConteo(resource.data,getAfter(compraRef(request.resource.data.ultimaCompraId)).data.fecha)
+    && !exists(compraRef(request.resource.data.ultimaCompraId))
+    && getAfter(compraRef(request.resource.data.ultimaCompraId)).data.registradoPor==request.auth.uid
+    && getAfter(compraRef(request.resource.data.ultimaCompraId)).data.cantidades[codigo]==request.resource.data.cantidad-resource.data.cantidad
+   );
+   allow delete: if false;
+  }
+  match /proveedores/{proveedorId}{
+   allow read: if activo();
+   allow create: if admin()
+    && request.resource.data.keys().hasOnly(['id','nombre','activo','creadoPor'])
+    && request.resource.data.keys().hasAll(['id','nombre','activo','creadoPor'])
+    && request.resource.data.id is int && string(request.resource.data.id)==proveedorId
+    && request.resource.data.nombre is string && request.resource.data.nombre.size()>0 && request.resource.data.nombre.size()<=150
+    && request.resource.data.activo==true && request.resource.data.creadoPor==request.auth.uid;
+   allow update: if admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre','activo'])
+    && request.resource.data.nombre is string && request.resource.data.nombre.size()>0 && request.resource.data.nombre.size()<=150
+    && request.resource.data.activo is bool;
+   allow delete: if false;
+  }
+  match /compras/{compraId}{
+   allow read: if activo() && permiso('reportes');
+   allow create: if permiso('compras')
+    && request.resource.data.keys().hasOnly(['id','fecha','proveedorNombre','items','cantidades','registradoPor'])
+    && request.resource.data.keys().hasAll(['id','fecha','proveedorNombre','items','cantidades','registradoPor'])
+    && request.resource.data.id==compraId && request.resource.data.registradoPor==request.auth.uid
+    && fechaMovimientoPermitida(request.resource.data.fecha)
+    && request.resource.data.proveedorNombre is string && request.resource.data.proveedorNombre.size()>0 && request.resource.data.proveedorNombre.size()<=150
+    && request.resource.data.items is list && request.resource.data.items.size()>0 && request.resource.data.items.size()<=4
+    && request.resource.data.cantidades is map
+    && request.resource.data.cantidades.keys().size()==request.resource.data.items.size()
+    && compraLinea(request.resource.data,0) && compraLinea(request.resource.data,1)
+    && compraLinea(request.resource.data,2) && compraLinea(request.resource.data,3);
+   allow update,delete: if false;
+  }
+  match /ventas/{ventaId}{
+   allow read: if activo();
+   allow create: if (request.resource.data.medio == 'CREDITO' ? permiso('creditos') : permiso('ventas'))
+    && request.resource.data.keys().hasOnly(['id','fecha','medio','total','totalCent','items','cantidades','clienteId','clienteNombre','registradoPor'])
+    && request.resource.data.keys().hasAll(['id','fecha','medio','total','items','cantidades','clienteId','clienteNombre','registradoPor'])
+    && request.resource.data.id==ventaId && request.resource.data.registradoPor==request.auth.uid
+    && fechaMovimientoPermitida(request.resource.data.fecha) && request.resource.data.medio in ['EFECTIVO','YAPE','CREDITO']
+    && request.resource.data.total is number && request.resource.data.total>=0
+    && request.resource.data.clienteNombre is string
+    && request.resource.data.items is list && request.resource.data.items.size()>0 && request.resource.data.items.size()<=4
+    && request.resource.data.cantidades is map
+    && request.resource.data.cantidades.keys().size()==request.resource.data.items.size()
+     && (request.resource.data.medio=='CREDITO'
+        ? (lineaCredito(request.resource.data,0) && lineaCredito(request.resource.data,1)
+          && lineaCredito(request.resource.data,2) && lineaCredito(request.resource.data,3))
+        : (linea(request.resource.data,0) && linea(request.resource.data,1)
+          && linea(request.resource.data,2) && linea(request.resource.data,3)))
+    && request.resource.data.total >= subtotal(request.resource.data,0)+subtotal(request.resource.data,1)+subtotal(request.resource.data,2)+subtotal(request.resource.data,3)-0.011
+    && request.resource.data.total <= subtotal(request.resource.data,0)+subtotal(request.resource.data,1)+subtotal(request.resource.data,2)+subtotal(request.resource.data,3)+0.011
+    && (request.resource.data.medio!='CREDITO' || (
+      permiso('creditos') && request.resource.data.keys().hasAll(['totalCent'])
+      && request.resource.data.totalCent is int && request.resource.data.totalCent>0
+      && request.resource.data.totalCent >= request.resource.data.total*100-0.01 && request.resource.data.totalCent <= request.resource.data.total*100+0.01
+      && request.resource.data.clienteId is int
+      && exists(clienteRef(string(request.resource.data.clienteId)))
+      && get(clienteRef(string(request.resource.data.clienteId))).data.activo == true
+      // Impide créditos huérfanos: la misma transacción debe actualizar la cuenta.
+      && getAfter(cuentaRef(string(request.resource.data.clienteId))).data.ultimaOperacionId == ventaId
+      && getAfter(cuentaRef(string(request.resource.data.clienteId))).data.ultimaOperacionTipo == 'CREDITO'
+    ));
+   allow update,delete: if false;
+  }
+  match /clientes/{clienteId}{
+   allow read: if activo();
+   allow create: if permiso('creditos') && request.resource.data.keys().hasOnly(['id','nombre','activo','creadoPor'])
+    && request.resource.data.keys().hasAll(['id','nombre','activo','creadoPor'])
+    && request.resource.data.id is int && string(request.resource.data.id)==clienteId
+    && request.resource.data.nombre is string && request.resource.data.nombre.size()>0 && request.resource.data.nombre.size()<=150
+    && request.resource.data.activo==true && request.resource.data.creadoPor==request.auth.uid;
+   allow update: if permiso('creditos') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre','activo'])
+    && request.resource.data.nombre is string && request.resource.data.nombre.size()>0 && request.resource.data.nombre.size()<=150
+    && request.resource.data.activo is bool;
+   allow delete: if false;
+  }
+  function cuentaCampos(c,id){return c.keys().hasOnly(['clienteId','clienteNombre','totalCent','pagadoCent','saldoCent','ultimaOperacionId','ultimaOperacionTipo'])
+    && c.keys().hasAll(['clienteId','clienteNombre','totalCent','pagadoCent','saldoCent','ultimaOperacionId','ultimaOperacionTipo'])
+    && c.clienteId is int && string(c.clienteId)==id
+    && c.clienteNombre is string && c.totalCent is int && c.pagadoCent is int && c.saldoCent is int
+    && c.totalCent>=0 && c.pagadoCent>=0 && c.saldoCent>=0 && c.saldoCent==c.totalCent-c.pagadoCent
+    && c.ultimaOperacionId is string && c.ultimaOperacionTipo in ['CREDITO','PAGO'];}
+  function cuentaCreditoNuevo(n){
+  let v = getAfter(ventaRef(n.ultimaOperacionId)).data;
+  return n.ultimaOperacionTipo == 'CREDITO'
+    && !exists(ventaRef(n.ultimaOperacionId))
+    && v.registradoPor == request.auth.uid
+    && v.medio == 'CREDITO'
+    && v.clienteId == n.clienteId
+    && v.totalCent is int
+    && v.totalCent > 0
+    && n.totalCent == v.totalCent
+    && n.pagadoCent == 0
+    && n.saldoCent == v.totalCent;
+}
+
+function cuentaCredito(n,ant){
+  let v = getAfter(ventaRef(n.ultimaOperacionId)).data;
+  return n.ultimaOperacionTipo == 'CREDITO'
+    && !exists(ventaRef(n.ultimaOperacionId))
+    && v.registradoPor == request.auth.uid
+    && v.medio == 'CREDITO'
+    && v.clienteId == n.clienteId
+    && v.totalCent is int
+    && v.totalCent > 0
+    && n.totalCent == ant.totalCent + v.totalCent
+    && n.pagadoCent == ant.pagadoCent
+    && n.saldoCent == ant.saldoCent + v.totalCent;
+}
+function cuentaPago(n,ant){
+   let p=getAfter(pagoRef(n.ultimaOperacionId)).data;
+   return n.ultimaOperacionTipo=='PAGO' && !exists(pagoRef(n.ultimaOperacionId))
+    && p.registradoPor==request.auth.uid && p.clienteId==n.clienteId
+    && p.montoCent is int && p.montoCent>0 && ant.saldoCent>=p.montoCent
+    && n.totalCent==ant.totalCent && n.pagadoCent==ant.pagadoCent+p.montoCent
+    && n.saldoCent==ant.saldoCent-p.montoCent;
+  }
+  match /cuentas/{clienteId}{
+   allow read: if activo() && permiso('creditos');
+   allow create: if permiso('creditos') && cuentaCampos(request.resource.data,clienteId)
+    && exists(clienteRef(clienteId)) && cuentaCreditoNuevo(request.resource.data);
+   allow update: if permiso('creditos') && cuentaCampos(request.resource.data,clienteId)
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalCent','pagadoCent','saldoCent','ultimaOperacionId','ultimaOperacionTipo'])
+    && (cuentaCredito(request.resource.data,resource.data) || cuentaPago(request.resource.data,resource.data));
+   allow delete: if false;
+  }
+  match /pagos/{pagoId}{
+   allow read: if activo() && permiso('creditos');
+   allow create: if permiso('creditos')
+    && request.resource.data.keys().hasOnly(['id','clienteId','clienteNombre','monto','montoCent','fecha','registradoPor'])
+    && request.resource.data.keys().hasAll(['id','clienteId','clienteNombre','monto','montoCent','fecha','registradoPor'])
+    && request.resource.data.id==pagoId && request.resource.data.clienteId is int
+    && fechaMovimientoPermitida(request.resource.data.fecha) && request.resource.data.registradoPor==request.auth.uid
+    && request.resource.data.montoCent is int && request.resource.data.montoCent>0
+    && request.resource.data.montoCent >= request.resource.data.monto*100-0.01
+    && request.resource.data.montoCent <= request.resource.data.monto*100+0.01
+    && request.resource.data.monto is number && request.resource.data.monto>0
+    // Un pago no puede existir sin actualizar el saldo en la misma transacción.
+    && getAfter(cuentaRef(string(request.resource.data.clienteId))).data.ultimaOperacionId == pagoId
+    && getAfter(cuentaRef(string(request.resource.data.clienteId))).data.ultimaOperacionTipo == 'PAGO';
+   allow update,delete: if false;
+  }
+  match /{document=**}{allow read,write: if false;}
+ }
+}

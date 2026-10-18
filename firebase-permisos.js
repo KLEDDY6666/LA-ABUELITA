@@ -6,10 +6,10 @@ const $=id=>document.getElementById(id);
 let rol='',permisos={},usuarios=[],unsubscribe=null,session=0;
 const permitido=k=>rol==='admin'||(rol==='usuario'&&(k==='conteo'?permisos[k]===true:permisos[k]!==false));
 window.abuelitaPuede=k=>permitido(k);
-const pantallaModulo={consulta:'consulta',venta:'ventas',registroRapido:'registro',productos:'productos',compra:'compras',credito:'creditos',movimientos:'reportes',permisos:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
+const pantallaModulo={consulta:'consulta',venta:'ventas',registroRapido:'registro',productos:'productos',compra:'compras',credito:'creditos',movimientos:'reportes',permisos:'admin',homenaje:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
 window.abuelitaPermitePantalla=p=>pantallaModulo[p]==='admin'?rol==='admin':(p==='productos'?(permitido('productos')||(window.abuelitaInventario?.enProceso&&permitido('conteo'))):(pantallaModulo[p]?permitido(pantallaModulo[p]):true));
 function refrescar(){
- const elementos={administracion:'admin',venta:'ventas',compra:'compras',consulta:'consulta',credito:'creditos',registroRapido:'registro',productos:'productos',movimientos:'reportes',permisos:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
+ const elementos={administracion:'admin',venta:'ventas',compra:'compras',consulta:'consulta',credito:'creditos',registroRapido:'registro',productos:'productos',movimientos:'reportes',permisos:'admin',homenaje:'admin',administracion:'admin',clientes:'admin',proveedores:'admin',datos:'admin'};
  for(const b of document.querySelectorAll('[data-go]')){const k=elementos[b.dataset.go];if(k)b.style.display=k==='admin'?(rol==='admin'?'':'none'):((k==='productos'?(permitido('productos')||(window.abuelitaInventario?.enProceso&&permitido('conteo'))):permitido(k))?'':'none')}
  $('btnPermisosAdmin').style.display=rol==='admin'?'':'none';
  // Configuración y todas sus pantallas están reservadas al administrador por rol.
