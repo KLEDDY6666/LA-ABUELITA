@@ -166,6 +166,7 @@ async function finishPay(medio){
  if(carrito.length>4){$('payMsg').textContent='Máximo 4 productos diferentes por venta.';$('payMsg').className='msg err';return}
  if(!validarStockVenta(carrito,'payMsg'))return;
  if(medio==='CREDITO'){
+  if(carrito.length>3){$('payMsg').textContent='Para ventas a crédito, registre máximo 3 productos diferentes por operación. Retire los adicionales del carrito y regístrelos en un segundo crédito al mismo cliente; ambos importes se acumularán en su cuenta. No se ha registrado ningún crédito.';$('payMsg').className='msg err';return}
   const id=Number($('ventaCliente').value),cli=clientes.find(c=>c.id===id&&clienteActivo(c));
   if(!cli){$('payMsg').textContent='Seleccione un cliente activo para la venta al crédito.';$('payMsg').className='msg err';return}
   if(!navigator.onLine||!window.abuelitaCreditosCloud){$('payMsg').textContent='Los créditos requieren conexión a Firebase. No se registró la venta.';$('payMsg').className='msg err';return}

@@ -1,0 +1,15 @@
+LA ABUELITA V1.48 - CIERRE CREDITOS MAXIMO 3 PRODUCTOS DIFERENTES
+
+Base: V1.48 Movimientos corregidos. Reglas: V4 experimental, ajustadas para un maximo de 3 lineas en CREDITOS.
+
+- Creditos: 1, 2 y 3 productos diferentes por operacion. Si hay 4, se muestra un aviso ANTES de enviar a Firebase.
+- Efectivo y Yape: mantienen hasta 4 productos diferentes.
+- Para mas de 3 productos en credito: hacer dos operaciones al mismo cliente; los importes se acumulan en su cuenta.
+- No hay particion automatica del carrito, para evitar ventas parciales o duplicadas.
+- Compras, productos, usuarios, homenajes y movimientos no modificados.
+
+IMPORTANTE: NO PUBLICAR EL ZIP COMO SI FUERA UNA PRUEBA FINAL APROBADA.
+Se requiere publicar codigo en GitHub Pages y desplegar firestore.rules por separado.
+Las reglas V4 fueron probadas con 8/9 casos: el caso de 4 productos fallaba; esta version limita a 3.
+Antes de desplegar en produccion, comprobar con emulador que el caso 3 productos sigue pasando, y que 4 se rechaza por limite sin generar ventas.
+No importar ni borrar datos Firestore.

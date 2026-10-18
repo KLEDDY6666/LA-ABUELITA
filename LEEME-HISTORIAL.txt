@@ -1,0 +1,9 @@
+LA ABUELITA V1.48 - HISTORIAL DE MOVIMIENTOS
+
+Correccion: ventas y compras solo se muestran desde la lista confirmada por Firebase, no desde localStorage antiguo.
+Las colas de ventas offline pendientes se conservan aparte.
+El cache del Service Worker tiene una nueva version.
+
+NO CORRIGE EL ERROR DE PERMISOS DE CREDITOS. No publicar las reglas firestore.rules de este paquete como una supuesta solucion de creditos.
+Para actualizar el sitio GitHub Pages, copiar los archivos del ZIP a la raiz del repositorio y confirmar el commit.
+No modifica Firebase ni elimina catalogo, stock, usuarios o configuracion.

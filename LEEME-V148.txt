@@ -1,0 +1,11 @@
+LA ABUELITA V1.48 - CORRECCIONES CONSOLIDADAS
+
+1. app.js: el historial confirmado se reemplaza por los documentos vigentes de Firestore; ya no se mezclan ventas antiguas de localStorage.
+2. firebase-ventas.js: obtiene el historial completo sin limitar a 300 ventas y consulta el nombre del vendedor.
+3. firestore.rules: conserva el ajuste de nombre de cliente en cuentas de credito.
+4. sw.js: nueva version de cache para distribuir los cambios.
+
+NO INCLUYE LIMPIEZA REMOTA DE FIREBASE. Los datos comerciales existentes en Firebase NO se eliminan por instalar este ZIP.
+Las ventas offline pendientes siguen en una cola local independiente, para evitar perder ventas reales.
+La correccion de permisos de credito requiere desplegar firestore.rules y probarla con credenciales de usuario normal.
+No se ha ejecutado prueba de integracion con el Firebase de produccion.
