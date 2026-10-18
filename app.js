@@ -95,7 +95,7 @@ $('guardar').onclick=async()=>{
 };
 $('cancelarEdicionProducto').onclick=()=>{limpiarEdicionProducto();render();$('buscar').focus()};
 function addVenta(){let code=$('vCodigo').value.trim();if(!code)return;let p=productos.find(x=>x.codigo===code);if(!p){$('vMsg').textContent='Producto no encontrado.';$('vMsg').className='msg err';$('vCodigo').select();return}let row=carrito.find(x=>x.codigo===code),qty=row?row.cantidad+1:1;if(stockDisponible(p)<=0||qty>stockDisponible(p)){$('vMsg').textContent=`STOCK INSUFICIENTE. Disponible: ${stockDisponible(p)} ${stockDisponible(p)===1?'unidad':'unidades'}.`;$('vMsg').className='msg err';$('vCodigo').value='';$('vCodigo').focus();return}if(!row&&carrito.length>=4){$('vMsg').textContent='Máximo 4 productos diferentes por venta en esta etapa. Finalice esta venta y registre otra.';$('vMsg').className='msg err';return}if(row)row.cantidad++;else carrito.push({codigo:p.codigo,nombre:p.nombre,precio:Number(p.precio),cantidad:1});store(CART_KEY,carrito);$('vCodigo').value='';$('vMsg').textContent=`✓ Agregado al carrito: ${p.nombre}. Stock disponible: ${stockDisponible(p)} ${stockDisponible(p)===1?'unidad':'unidades'}.`;$('vMsg').className='msg ok';renderCart();$('vCodigo').focus()}
-$('vCodigo').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addVenta()}});
+// Entrada de Ventas: un único controlador de Enter (definido junto al buscador).
 function pendientesVenta(){return load(OFFLINE_SALES_KEY,[])}
 function stockReservado(codigo){return pendientesVenta().filter(x=>x.estado!=='error').reduce((n,v)=>n+(v.items||[]).filter(i=>String(i.codigo)===String(codigo)).reduce((m,i)=>m+Number(i.cantidad||0),0),0)}
 function stockDisponible(p){return Math.max(0,Number(p?.cantidad||0)-stockReservado(p?.codigo))}
@@ -116,7 +116,7 @@ async function sincronizarPendientes(){
    if(x){x.estado='error';x.error=e.message;store(OFFLINE_SALES_KEY,actuales)}
   }
  }
- if(window.abuelitaProductosCloud?.actualizar)await window.abuelitaProductosCloud.actualizar().catch(()=>{});
+ if(window.abuelitaProductosCloud?.actualizar){try{await window.abuelitaProductosCloud.actualizar()}catch(e){console.warn('No se pudo actualizar el catálogo:',e)}}
  }finally{sincronizandoPendientes=false;if(btn)btn.disabled=false;pintarPendientes();renderCart()}
 }
 window.addEventListener('online',()=>setTimeout(sincronizarPendientes,1000));
@@ -204,8 +204,8 @@ window.abuelitaAplicarCreditosCompartidos=(datos)=>{
  renderClientes();cargarSelectorClientes();cargarSelectorVenta();renderCreditos();
 };
 function renderCreditoDetalle(id){let cliente=clientes.find(c=>c.id===id), primer=creditos.find(c=>c.clienteId===id);if(!cliente&&!primer){clienteCreditoSeleccionado=null;$('creditoDetalleCard').classList.add('hidden');return}clienteCreditoSeleccionado=id;let nombre=cliente?cliente.nombre:primer.clienteNombre,saldo=saldoCliente(id);$('creditoDetalleNombre').textContent=nombre;$('creditoDetalleSaldo').textContent=saldo.toFixed(2);$('creditoDetalleCard').classList.remove('hidden');
- let mov=[...creditos.filter(c=>c.clienteId===id).map(c=>({fecha:c.fecha,tipo:'Crédito',monto:Number(c.total),items:c.items||[]})),...pagos.filter(p=>p.clienteId===id).map(p=>({fecha:p.fecha,tipo:'Abono',monto:-Number(p.monto),items:[]}))].sort((a,b)=>new Date(a.fecha)-new Date(b.fecha)), running=0;
- $('creditoMovimientos').innerHTML=mov.length?mov.map(m=>{running+=m.monto;return `<div class='movement'><div><b>${m.tipo}</b><div class='muted'>${fechaHora(m.fecha)}</div>${m.items.length?`<div class='movementItems muted'>${m.items.map(x=>`${esc(x.nombre)} × ${x.cantidad}`).join(' · ')}</div>`:''}</div><div class='movementAmount'>${m.monto<0?'− ':'+ '}S/ ${Math.abs(m.monto).toFixed(2)}<div class='muted'>Saldo S/ ${Math.max(0,running).toFixed(2)}</div></div></div>`}).join(''):`<p class='muted'>Sin movimientos.</p>`;
+ let mov=[...creditos.filter(c=>c.clienteId===id).map(c=>({fecha:c.fecha,tipo:'Crédito',monto:Number(c.total),items:c.items||[]})),...pagos.filter(p=>p.clienteId===id).map(p=>({fecha:p.fecha,tipo:'Abono',monto:-Number(p.monto),items:[]}))].sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
+ $('creditoMovimientos').innerHTML=mov.length?mov.map(m=>`<div class='movement'><div><b>${m.tipo}</b><div class='muted'>${fechaHora(m.fecha)}</div>${m.items.length?`<div class='movementItems muted'>${m.items.map(x=>`${esc(x.nombre)} × ${x.cantidad}`).join(' · ')}</div>`:''}</div><div class='movementAmount'>${m.monto<0?'− ':'+ '}S/ ${Math.abs(m.monto).toFixed(2)}</div></div>`).join(''):`<p class='muted'>Sin movimientos.</p>`;
  $('pagarTodoCredito').disabled=saldo<=0;$('abonarCredito').disabled=saldo<=0
 }
 
@@ -226,10 +226,41 @@ window.generarEstadoCuentaCliente=()=>{
  }).join('');
  const abonos=movPag.map(p=>`<tr><td>${esc(fechaHora(p.fecha))}</td><td class="numero">${fmt(p.monto)}</td></tr>`).join('')||'<tr><td colspan="2">Sin abonos registrados</td></tr>';
  const total=creditoTotalCliente(id),abonado=pagosTotalCliente(id);
- const documento=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Estado de cuenta - ${esc(nombre)}</title><style>body{font:13px Arial,sans-serif;color:#222;margin:28px}h1{text-align:center;font-size:23px;margin-bottom:3px}h2{font-size:15px;margin-top:22px}p{text-align:center;margin-top:0}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left}th{background:#eee}.numero{text-align:right}.totales{margin-top:22px;margin-left:auto;max-width:270px}.totales div{display:flex;justify-content:space-between;padding:7px;border-bottom:1px solid #ddd}.saldo{font-size:17px;font-weight:bold}.nota{font-size:11px;color:#555;margin-top:25px}@page{size:A4;margin:14mm}@media print{body{margin:0}}</style></head><body><h1>BODEGA LA ABUELITA</h1><p>ESTADO DE CUENTA DE CRÉDITOS</p><strong>Cliente:</strong> ${esc(nombre)}<br><strong>Fecha de emisión:</strong> ${esc(new Date().toLocaleString('es-PE'))}<h2>Detalle de compras al crédito</h2><table><thead><tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Importe</th></tr></thead><tbody>${filas}</tbody></table><h2>Abonos realizados</h2><table><thead><tr><th>Fecha</th><th>Importe</th></tr></thead><tbody>${abonos}</tbody></table><div class="totales"><div><span>Total compras</span><b>${fmt(total)}</b></div><div><span>Total abonado</span><b>${fmt(abonado)}</b></div><div class="saldo"><span>SALDO</span><span>${fmt(Math.max(0,total-abonado))}</span></div></div><div class="nota">Documento informativo elaborado con los movimientos compartidos en Firebase. Revise los datos antes de compartirlos.</div><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));</script></body></html>`;
- const w=window.open('','_blank');
- if(!w)return alert('El navegador bloqueó la ventana. Permita ventanas emergentes para generar el PDF.');
- w.document.open();w.document.write(documento);w.document.close();
+ const documento=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Estado de cuenta - ${esc(nombre)}</title><style>body{font:13px Arial,sans-serif;color:#222;margin:28px}h1{text-align:center;font-size:23px;margin-bottom:3px}h2{font-size:15px;margin-top:22px}p{text-align:center;margin-top:0}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left}th{background:#eee}.numero{text-align:right}.totales{margin-top:22px;margin-left:auto;max-width:270px}.totales div{display:flex;justify-content:space-between;padding:7px;border-bottom:1px solid #ddd}.saldo{font-size:17px;font-weight:bold}.nota{font-size:11px;color:#555;margin-top:25px}@page{size:A4;margin:14mm}@media print{body{margin:0}}</style></head><body><h1>BODEGA LA ABUELITA</h1><p>ESTADO DE CUENTA DE CRÉDITOS</p><strong>Cliente:</strong> ${esc(nombre)}<br><strong>Fecha de emisión:</strong> ${esc(new Date().toLocaleString('es-PE'))}<h2>Detalle de compras al crédito</h2><table><thead><tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Importe</th></tr></thead><tbody>${filas}</tbody></table><h2>Abonos realizados</h2><table><thead><tr><th>Fecha</th><th>Importe</th></tr></thead><tbody>${abonos}</tbody></table><div class="totales"><div><span>Total compras</span><b>${fmt(total)}</b></div><div><span>Total abonado</span><b>${fmt(abonado)}</b></div><div class="saldo"><span>SALDO</span><span>${fmt(Math.max(0,total-abonado))}</span></div></div><div class="nota">Documento informativo elaborado con los movimientos compartidos en Firebase. Revise los datos antes de compartirlos.</div></body></html>`;
+ // Crear el documento antes de insertar el marco para evitar imprimir about:blank.
+ // La protección impide que varios eventos load abran varios diálogos.
+ const anterior=document.getElementById('marcoEstadoCuentaPDF');
+ if(anterior)anterior.remove();
+ const marco=document.createElement('iframe');
+ marco.id='marcoEstadoCuentaPDF';
+ marco.setAttribute('title','Estado de cuenta para imprimir');
+ // Mantener el marco dentro del área visible para que Chrome pueda renderizarlo.
+ marco.style.cssText='position:fixed;left:0;top:0;width:800px;height:1100px;border:0;opacity:0;pointer-events:none;z-index:-1;';
+ let impresionIniciada=false;
+ marco.onload=async()=>{
+  if(impresionIniciada || !marco.isConnected)return;
+  const ventana=marco.contentWindow;
+  const doc=marco.contentDocument;
+  // Ignorar una posible carga inicial de about:blank.
+  if(!ventana || !doc || !doc.querySelector('.totales') || !doc.querySelector('table'))return;
+  impresionIniciada=true;
+  try{
+   if(doc.fonts?.ready)await doc.fonts.ready;
+   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+   if(!marco.isConnected)return;
+   ventana.addEventListener('afterprint',()=>setTimeout(()=>{
+    if(marco.isConnected)marco.remove();
+   },500),{once:true});
+   ventana.focus();
+   ventana.print();
+  }catch(error){
+   console.error('No se pudo preparar el estado de cuenta:',error);
+   if(marco.isConnected)marco.remove();
+   alert('No se pudo abrir la impresión. Intente nuevamente.');
+  }
+ };
+ marco.srcdoc=documento;
+ document.body.appendChild(marco);
 };
 
 window.abrirCreditoCliente=id=>{renderCreditoDetalle(id);setTimeout(()=>$('creditoDetalleCard').scrollIntoView({behavior:'smooth',block:'start'}),0)};
