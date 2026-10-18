@@ -1,3 +1,4 @@
+import {movimientoInventario} from './inventario-core.js';
 import {auth,db} from './firebase-auth.js';
 import {doc,getDoc,runTransaction,collection,query,orderBy,limit,onSnapshot} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 const MAX=4;
@@ -12,12 +13,14 @@ window.abuelitaVentasCloud={async registrar(v){
  const vr=doc(db,'ventas',String(v.id));
  await runTransaction(db,async tx=>{
   const existe=await tx.get(vr);if(existe.exists()){if(existe.data().registradoPor!==u.uid)throw Error('ID de venta ya utilizado');return}
+  const cfgSnap=await tx.get(doc(db,'configuracion','inventarioInicial'));
+  const enProceso=cfgSnap.exists()&&cfgSnap.data().estado==='en_proceso';
   const productos=[];
-  for(const [codigo,cantidad] of orden){const ref=doc(db,'productos',codigo);const snap=await tx.get(ref);if(!snap.exists())throw Error('Producto no encontrado: '+codigo);const p=snap.data();if(!Number.isSafeInteger(p.cantidad)||p.cantidad<cantidad)throw Error('Stock insuficiente para '+p.nombre);productos.push({ref,codigo,cantidad,p})}
+  for(const [codigo,cantidad] of orden){const ref=doc(db,'productos',codigo);const snap=await tx.get(ref);if(!snap.exists())throw Error('Producto no encontrado: '+codigo);const p=snap.data();if(!Number.isSafeInteger(p.cantidad)||(!enProceso && p.cantidad<cantidad))throw Error('Stock insuficiente para '+p.nombre);productos.push({ref,codigo,cantidad,p})}
   const items=productos.map(({codigo,cantidad,p})=>({codigo,nombre:p.nombre,precio:p.precio,cantidad}));
   const total=Math.round(items.reduce((s,i)=>s+i.precio*i.cantidad,0)*100)/100;
   const cantidades=Object.fromEntries(productos.map(p=>[p.codigo,p.cantidad]));
-  for(const {ref,cantidad,p} of productos)tx.update(ref,{cantidad:p.cantidad-cantidad,ultimaVentaId:v.id});
+  for(const {ref,cantidad,p} of productos){const m=movimientoInventario(p,cantidad,'venta',v.fecha,enProceso);if(m.actualizar)tx.update(ref,{cantidad:m.cantidad,ultimaVentaId:v.id})}
   tx.set(vr,{id:v.id,fecha:v.fecha,medio:v.medio,total,items,cantidades,clienteId:v.clienteId??null,clienteNombre:v.clienteNombre||'',registradoPor:u.uid});
  });
 }};

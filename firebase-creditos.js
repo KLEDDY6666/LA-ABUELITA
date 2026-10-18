@@ -1,3 +1,4 @@
+import {movimientoInventario} from './inventario-core.js';
 import {auth,db} from './firebase-auth.js';
 import {doc,getDoc,collection,onSnapshot,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 import {onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
@@ -18,12 +19,14 @@ window.abuelitaCreditosCloud={
   await runTransaction(db,async tx=>{
    const [cl,cta,ex]=await Promise.all([tx.get(cliRef),tx.get(ctaRef),tx.get(ventaRef)]);
    if(ex.exists())throw Error('La venta ya existe');if(!cl.exists()||cl.data().activo!==true)throw Error('Cliente inactivo o no registrado');
-   const prods=[];for(const [cod,n] of [...lineas.entries()].sort(([a],[b])=>a.localeCompare(b))){const r=doc(db,'productos',cod),s=await tx.get(r);if(!s.exists()||!Number.isSafeInteger(s.data().cantidad)||s.data().cantidad<n)throw Error('Stock insuficiente: '+cod);prods.push({r,cod,n,p:s.data()})}
+   const cfgSnap=await tx.get(doc(db,'configuracion','inventarioInicial'));
+   const enProceso=cfgSnap.exists()&&cfgSnap.data().estado==='en_proceso';
+   const prods=[];for(const [cod,n] of [...lineas.entries()].sort(([a],[b])=>a.localeCompare(b))){const r=doc(db,'productos',cod),s=await tx.get(r);if(!s.exists()||!Number.isSafeInteger(s.data().cantidad)||(!enProceso && s.data().cantidad<n))throw Error('Stock insuficiente: '+cod);prods.push({r,cod,n,p:s.data()})}
    const items=prods.map(x=>({codigo:x.cod,nombre:x.p.nombre,precio:x.p.precio,cantidad:x.n}));const totalCent=cents(items.reduce((sum,x)=>sum+Number(x.precio)*Number(x.cantidad),0));
    if(totalCent<=0)throw Error('El crédito debe tener importe positivo');
    const ant=cta.exists()?cta.data():{totalCent:0,pagadoCent:0,saldoCent:0};
    const venta={id:v.id,fecha:v.fecha,medio:'CREDITO',total:totalCent/100,totalCent,items,cantidades:Object.fromEntries(prods.map(x=>[x.cod,x.n])),clienteId:v.clienteId,clienteNombre:cl.data().nombre,registradoPor:u.uid};
-   for(const x of prods)tx.update(x.r,{cantidad:x.p.cantidad-x.n,ultimaVentaId:v.id});
+   for(const x of prods){const m=movimientoInventario(x.p,x.n,'venta',v.fecha,enProceso);if(m.actualizar)tx.update(x.r,{cantidad:m.cantidad,ultimaVentaId:v.id})}
    tx.set(ventaRef,venta);
    tx.set(ctaRef,{clienteId:v.clienteId,clienteNombre:cl.data().nombre,totalCent:ant.totalCent+totalCent,pagadoCent:ant.pagadoCent,saldoCent:ant.saldoCent+totalCent,ultimaOperacionId:v.id,ultimaOperacionTipo:'CREDITO'});
   });

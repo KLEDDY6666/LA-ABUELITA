@@ -26,6 +26,7 @@ async function guardarRapido(){
   let existente=productos.find(p=>String(p.codigo)===codigo);
   if(existente){productoRapidoDuplicado(existente);return}
   if(!(precio>=0)||!(cantidad>=0)){$('qMsg').textContent='Revise precio o stock.';$('qMsg').className='msg err';return}
+  if(window.abuelitaInventario?.enProceso && cantidad!==0){$('qMsg').textContent='Durante el inventario, registre el producto con stock 0. Después utilice «Registrar conteo físico» para ingresar la cantidad real.';$('qMsg').className='msg err';return}
   const nuevo={codigo,nombre,precio,cantidad,creado:new Date().toISOString()};
   if(!window.abuelitaProductosCloud){$('qMsg').textContent='Espere la conexión segura con Firebase.';return;}
   $('qGuardar').disabled=true;
@@ -53,7 +54,7 @@ function limpiarEdicionProducto(){
 }
 function seleccionarProducto(codigo){
   let p=productos.find(x=>String(x.codigo)===String(codigo));if(!p)return;
-  $('editOriginalCodigo').value=p.codigo;$('codigo').value=p.codigo;$('nombre').value=p.nombre;$('precio').value=Number(p.precio||0);$('cantidad').value=Number(p.cantidad||0);$('editarProductoCard').classList.remove('hidden');$('buscar').value='';render();$('nombre').focus();
+  $('editOriginalCodigo').value=p.codigo;$('codigo').value=p.codigo;$('nombre').value=p.nombre;$('precio').value=Number(p.precio||0);$('cantidad').value=Number(p.cantidad||0);$('registrarConteo').style.display=window.abuelitaInventario?.enProceso&&!p.contadoEn?'block':'none';$('cantidad').readOnly=Boolean(window.abuelitaInventario?.enProceso&&p.contadoEn);$('editarProductoCard').classList.remove('hidden');$('buscar').value='';render();$('nombre').focus();
 }
 window.seleccionarProducto=seleccionarProducto;
 function render(){
@@ -83,22 +84,36 @@ $('buscar').addEventListener('keydown',e=>{
 });
 $('guardar').onclick=async()=>{
   let original=$('editOriginalCodigo').value,codigo=$('codigo').value.trim(),nombre=$('nombre').value.trim();let precio=Number(($('precio').value||'0').replace(',','.')),cantidad=parseInt($('cantidad').value||'0',10);
-  if(!original)return msg('Primero seleccione un producto.','err');if(!codigo||!nombre||!(precio>=0)||!(cantidad>=0))return msg('Revise los datos del producto.','err');
+  if(!original)return msg('Primero seleccione un producto.','err');if(!codigo||!nombre||!Number.isFinite(precio)||precio<0||(!window.abuelitaInventario?.enProceso&&(!Number.isSafeInteger(cantidad)||cantidad<0)))return msg('Revise los datos del producto.','err');
   if(productos.some(p=>String(p.codigo)===codigo&&String(p.codigo)!==String(original)))return msg('Ese código pertenece a otro producto.','err');
   let p=productos.find(x=>String(x.codigo)===String(original));if(!p)return msg('Producto no encontrado.','err');
   if(codigo!==original)return msg('Por seguridad, el código de barras no puede modificarse. Cree otro producto si cambió.','err');
   if(!window.abuelitaProductosCloud)return msg('Espere la conexión segura con Firebase.','err');
   $('guardar').disabled=true;
-  try{await window.abuelitaProductosCloud.editar(original,{nombre,precio,cantidad})}catch(e){msg('No se guardó en Firebase: '+e.message,'err');return}finally{$('guardar').disabled=false}
-  p.nombre=nombre;p.precio=precio;p.cantidad=cantidad;store(KEY,productos);
+  try{await window.abuelitaProductosCloud.editar(original,window.abuelitaInventario?.enProceso?{nombre,precio}:{nombre,precio,cantidad})}catch(e){msg('No se guardó en Firebase: '+e.message,'err');return}finally{$('guardar').disabled=false}
+  p.nombre=nombre;p.precio=precio;if(!window.abuelitaInventario?.enProceso)p.cantidad=cantidad;store(KEY,productos);
   limpiarEdicionProducto();render();$('buscar').focus();
+};
+$('registrarConteo').onclick=async()=>{
+ const codigo=$('editOriginalCodigo').value;
+ if(!codigo)return msg('Seleccione primero un producto.','err');
+ const p=productos.find(x=>String(x.codigo)===String(codigo));
+ if(!window.abuelitaInventario?.enProceso)return msg('El inventario inicial no está activo.','err');
+ if(p?.contadoEn)return msg('Este producto ya tiene conteo inicial registrado.','err');
+ const cantidad=Number($('cantidad').value);
+ if(!Number.isSafeInteger(cantidad)||cantidad<0)return msg('Introduzca una cantidad física válida, incluso cero.','err');
+ if(!confirm(`¿Confirma que contó físicamente ${cantidad} unidades de ${p?.nombre}? Este conteo inicial no se podrá repetir.`))return;
+ const boton=$('registrarConteo');boton.disabled=true;
+ try{await window.abuelitaInventario.registrarConteo(codigo,cantidad);msg('Conteo físico guardado en Firebase.','ok');}
+ catch(e){msg('No se guardó el conteo: '+e.message,'err')}
+ finally{boton.disabled=false}
 };
 $('cancelarEdicionProducto').onclick=()=>{limpiarEdicionProducto();render();$('buscar').focus()};
 function addVenta(){let code=$('vCodigo').value.trim();if(!code)return;let p=productos.find(x=>x.codigo===code);if(!p){$('vMsg').textContent='Producto no encontrado.';$('vMsg').className='msg err';$('vCodigo').select();return}let row=carrito.find(x=>x.codigo===code),qty=row?row.cantidad+1:1;if(stockDisponible(p)<=0||qty>stockDisponible(p)){$('vMsg').textContent=`STOCK INSUFICIENTE. Disponible: ${stockDisponible(p)} ${stockDisponible(p)===1?'unidad':'unidades'}.`;$('vMsg').className='msg err';$('vCodigo').value='';$('vCodigo').focus();return}if(!row&&carrito.length>=4){$('vMsg').textContent='Máximo 4 productos diferentes por venta en esta etapa. Finalice esta venta y registre otra.';$('vMsg').className='msg err';return}if(row)row.cantidad++;else carrito.push({codigo:p.codigo,nombre:p.nombre,precio:Number(p.precio),cantidad:1});store(CART_KEY,carrito);$('vCodigo').value='';$('vMsg').textContent=`✓ Agregado al carrito: ${p.nombre}. Stock disponible: ${stockDisponible(p)} ${stockDisponible(p)===1?'unidad':'unidades'}.`;$('vMsg').className='msg ok';renderCart();$('vCodigo').focus()}
 // Entrada de Ventas: un único controlador de Enter (definido junto al buscador).
 function pendientesVenta(){return load(OFFLINE_SALES_KEY,[])}
 function stockReservado(codigo){return pendientesVenta().filter(x=>x.estado!=='error').reduce((n,v)=>n+(v.items||[]).filter(i=>String(i.codigo)===String(codigo)).reduce((m,i)=>m+Number(i.cantidad||0),0),0)}
-function stockDisponible(p){return Math.max(0,Number(p?.cantidad||0)-stockReservado(p?.codigo))}
+function stockDisponible(p){if(window.abuelitaInventario?.enProceso)return Number.MAX_SAFE_INTEGER;return Math.max(0,Number(p?.cantidad||0)-stockReservado(p?.codigo))}
 function pintarPendientes(){const el=$('ventasPendientes');if(!el)return;const arr=pendientesVenta();el.textContent=arr.length?`${arr.length} venta(s) pendiente(s) de sincronizar. ${arr.filter(x=>x.estado==='error').length} requiere(n) revisión.`:'No hay ventas pendientes.';el.style.color=arr.some(x=>x.estado==='error')?'#a20':'#333'}
 let sincronizandoPendientes=false;
 async function sincronizarPendientes(){
@@ -296,19 +311,41 @@ $('importar').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let b=
 render();renderCart();renderClientes();if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 
 
-// Limpieza de pruebas: conserva productos, clientes y el stock actual.
-$('limpiarPruebas').onclick=()=>{
- const ok=confirm('ATENCIÓN: esta opción solo limpia datos LOCALES de prueba; no borra nada en Firebase.\n\nSe borrarán las VENTAS, COMPRAS, CRÉDITOS y PAGOS LOCALES registrados.\n\nLos PRODUCTOS, CLIENTES y el STOCK ACTUAL NO se borrarán.\n\n¿Desea continuar?');
- if(!ok)return;
- ventas=[]; compras=[]; creditos=[]; pagos=[]; carrito=[]; carritoCompra=[]; clienteCreditoSeleccionado=null;
- store(SALES_KEY,ventas); store(PURCHASES_KEY,compras); store(CREDITS_KEY,creditos); store(PAYMENTS_KEY,pagos); store(CART_KEY,carrito); store(PURCHASE_CART_KEY,carritoCompra);
- // Reservamos también esta clave para el módulo de compras que se implementará después.
- 
- localStorage.removeItem(CREDIT_PENDING);
- render(); renderCart(); renderCreditos();
- $('limpiarMsg').textContent='✓ Datos de prueba eliminados. Productos, clientes y stock actual se conservaron.';
- $('limpiarMsg').className='msg ok';
+// Protección permanente: no exponer una limpieza local que podría ocultar créditos reales.
+// La inicialización de pruebas se hará una sola vez, de manera controlada, antes del uso real.
+const limpiarPruebasBoton=$('limpiarPruebas');
+if(limpiarPruebasBoton){
+ limpiarPruebasBoton.disabled=true;
+ limpiarPruebasBoton.hidden=true;
+}
+// No permitir finalizar el inventario antes de implementar la comprobación atómica
+// de todos los productos y las reglas de seguridad correspondientes.
+const auditarInventarioBoton=$('auditarInventario');
+if(auditarInventarioBoton)auditarInventarioBoton.onclick=async()=>{
+ const salida=$('inventarioMensaje');
+ auditarInventarioBoton.disabled=true;
+ salida.textContent='Consultando los productos en Firebase…';
+ try{
+  const a=await window.abuelitaInventario.auditar();
+  salida.textContent=`Productos: ${a.total}. Contados: ${a.contados}. Pendientes: ${a.pendientes.length}. Stock negativo: ${a.negativos.length}. Datos inválidos: ${a.invalidos.length}. `+
+   (a.apto?'Sin observaciones en el catálogo. El cierre sigue bloqueado hasta validar las reglas.':
+   `Revisar: ${a.pendientes.slice(0,12).join(', ')}${a.pendientes.length>12?'…':''}`);
+  salida.className='msg '+(a.apto?'ok':'err');
+ }catch(e){salida.textContent='No se pudo auditar: '+e.message;salida.className='msg err'}
+ finally{auditarInventarioBoton.disabled=false}
 };
+const finalizarInventarioBoton=$('finalizarInventario');
+if(finalizarInventarioBoton){
+ finalizarInventarioBoton.disabled=true;
+ finalizarInventarioBoton.title='Disponible tras la validación de existencias y reglas de Firebase';
+}
+function mostrarEstadoInventario(){
+ const el=$('inventarioEstado');if(!el)return;
+ const inv=window.abuelitaInventario;
+ el.textContent=inv?.enProceso?'Inventario en proceso: se pueden registrar conteos físicos.':inv?.estado==='finalizado'?'Inventario inicial finalizado.':'Inventario inicial pendiente de habilitación segura.';
+}
+mostrarEstadoInventario();
+window.addEventListener('abuelita-inventario-cambio',mostrarEstadoInventario);
 
 /* V1.9.1 - buscador unificado por código o cualquier palabra del nombre */
 function normText(s){return String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()}

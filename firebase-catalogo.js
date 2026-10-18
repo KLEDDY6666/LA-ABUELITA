@@ -6,7 +6,7 @@ const el=document.getElementById('firebaseCatalogoEstado');
 const say=t=>{if(el)el.textContent=t};
 let unsubscribe=null;
 let lastSignature='';
-function valid(p){return typeof p.codigo==='string'&&p.codigo.length>0&&typeof p.nombre==='string'&&p.nombre.trim().length>0&&Number.isFinite(p.precio)&&p.precio>=0&&Number.isSafeInteger(p.cantidad)&&p.cantidad>=0}
+function valid(p){return typeof p.codigo==='string'&&p.codigo.length>0&&typeof p.nombre==='string'&&p.nombre.trim().length>0&&Number.isFinite(p.precio)&&p.precio>=0&&Number.isSafeInteger(p.cantidad)&&(p.cantidad>=0||window.abuelitaInventario?.enProceso)}
 async function allowed(modulo){const u=auth.currentUser;if(!u)throw Error('Inicie sesión');const d=await getDoc(doc(db,'usuarios',u.uid));if(!d.exists()||d.data().estado!=='activo'||!['admin','usuario'].includes(d.data().rol))throw Error('Cuenta no autorizada');if(d.data().rol!=='admin' && d.data().permisos?.[modulo]===false)throw Error('No tienes permiso para esta operación');return u}
 function stop(){if(unsubscribe){unsubscribe();unsubscribe=null}lastSignature=''}
 function listen(){
@@ -16,7 +16,7 @@ function listen(){
  // Firestore mantiene una escucha y reconecta automáticamente al regresar internet.
  unsubscribe=onSnapshot(collection(db,'productos'),{includeMetadataChanges:true},snap=>{
   if(snap.metadata.fromCache){say('Sin conexión con Firebase: se conserva el catálogo local.');return}
-  const list=snap.docs.map(x=>{const p=x.data();return {codigo:String(p.codigo??''),nombre:String(p.nombre??''),precio:Number(p.precio),cantidad:Number(p.cantidad),creado:String(p.creado||'')}});
+  const list=snap.docs.map(x=>{const p=x.data();return {codigo:String(p.codigo??''),nombre:String(p.nombre??''),precio:Number(p.precio),cantidad:Number(p.cantidad),creado:String(p.creado||''),contadoEn:p.contadoEn||null}});
   const fallas=list.filter(p=>!valid(p));
   if(fallas.length){say('⚠️ Hay '+fallas.length+' productos inválidos en Firebase. Se conserva el catálogo anterior.');return}
   if(!list.length){say('⚠️ Catálogo vacío en Firebase. Se conservan los productos locales.');return}
@@ -32,7 +32,7 @@ function listen(){
 function refresh(){listen()}
 window.abuelitaProductosCloud={
  async crear(p){const u=await allowed('registro');if(!navigator.onLine)throw Error('Registrar productos requiere conexión en esta versión');if(!valid(p))throw Error('Datos inválidos');await runTransaction(db,async tx=>{const ref=doc(db,'productos',p.codigo);if((await tx.get(ref)).exists())throw Error('Código ya registrado en Firebase');tx.set(ref,{...p,importadoPor:u.uid})})},
- async editar(codigo,cambios){await allowed('productos');if(!navigator.onLine)throw Error('Editar productos requiere conexión en esta versión');await runTransaction(db,async tx=>{const ref=doc(db,'productos',codigo);const old=await tx.get(ref);if(!old.exists())throw Error('Producto no encontrado en Firebase');const p={...old.data(),...cambios};if(!valid(p))throw Error('Datos inválidos');tx.update(ref,cambios)})},
+ async editar(codigo,cambios){await allowed('productos');if(!navigator.onLine)throw Error('Editar productos requiere conexión en esta versión');await runTransaction(db,async tx=>{const ref=doc(db,'productos',codigo);const old=await tx.get(ref);const cfg=await tx.get(doc(db,'configuracion','inventarioInicial'));if(cfg.exists()&&cfg.data().estado==='en_proceso'&&Object.prototype.hasOwnProperty.call(cambios,'cantidad')&&cambios.cantidad!==old.data()?.cantidad)throw Error('Durante el inventario, registre las cantidades mediante CONTEO FÍSICO; no desde edición');if(!old.exists())throw Error('Producto no encontrado en Firebase');const p={...old.data(),...cambios};if(!valid(p))throw Error('Datos inválidos');tx.update(ref,cambios)})},
  actualizar:refresh
 };
 onAuthStateChanged(auth,u=>{if(u)listen();else{stop();say('Inicie sesión para sincronizar el catálogo.')}});
