@@ -22,7 +22,7 @@ window.abuelitaInventario={
   const u=auth.currentUser;if(!u||!navigator.onLine)throw Error('El conteo requiere sesión y conexión');
   if(!Number.isSafeInteger(cantidad)||cantidad<0)throw Error('Cantidad física inválida');
   const usuario=await getDoc(doc(db,'usuarios',u.uid));
-  if(!usuario.exists()||usuario.data().estado!=='activo'||usuario.data().rol!=='admin')throw Error('Solo el administrador puede registrar el conteo inicial');
+  if(!usuario.exists()||usuario.data().estado!=='activo'||(usuario.data().rol!=='admin'&&usuario.data().permisos?.conteo!==true))throw Error('Su cuenta no tiene permiso de conteo físico');
   await runTransaction(db,async tx=>{
    const cfg=await tx.get(configRef), ref=doc(db,'productos',String(codigo)), p=await tx.get(ref);
    if(!cfg.exists()||cfg.data().estado!=='en_proceso')throw Error('El inventario inicial no está activo');

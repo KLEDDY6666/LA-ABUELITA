@@ -31,7 +31,20 @@ function listen(){
 }
 function refresh(){listen()}
 window.abuelitaProductosCloud={
- async crear(p){const u=await allowed('registro');if(!navigator.onLine)throw Error('Registrar productos requiere conexión en esta versión');if(!valid(p))throw Error('Datos inválidos');await runTransaction(db,async tx=>{const ref=doc(db,'productos',p.codigo);if((await tx.get(ref)).exists())throw Error('Código ya registrado en Firebase');tx.set(ref,{...p,importadoPor:u.uid})})},
+ async crear(p){
+  const u=await allowed('registro');if(!navigator.onLine)throw Error('Registrar productos requiere conexión en esta versión');if(!valid(p))throw Error('Datos inválidos');
+  const contado=Object.prototype.hasOwnProperty.call(p,'contadoEn');
+  if(contado){await allowed('conteo');if(p.contadoPor!==u.uid)throw Error('El conteo debe identificar a su autor');}
+  await runTransaction(db,async tx=>{
+   const ref=doc(db,'productos',p.codigo), cfgRef=doc(db,'configuracion','inventarioInicial');
+   const actual=await tx.get(ref),cfg=await tx.get(cfgRef);
+   if(actual.exists())throw Error('Código ya registrado en Firebase');
+   const inventario=cfg.exists()&&cfg.data().estado==='en_proceso';
+   if(inventario && !contado && p.cantidad!==0)throw Error('Stock pendiente debe ser cero');
+   if(!inventario && contado)throw Error('El conteo inicial ya no está activo');
+   tx.set(ref,{...p,importadoPor:u.uid});
+  });
+ },
  async editar(codigo,cambios){await allowed('productos');if(!navigator.onLine)throw Error('Editar productos requiere conexión en esta versión');await runTransaction(db,async tx=>{const ref=doc(db,'productos',codigo);const old=await tx.get(ref);const cfg=await tx.get(doc(db,'configuracion','inventarioInicial'));if(cfg.exists()&&cfg.data().estado==='en_proceso'&&Object.prototype.hasOwnProperty.call(cambios,'cantidad')&&cambios.cantidad!==old.data()?.cantidad)throw Error('Durante el inventario, registre las cantidades mediante CONTEO FÍSICO; no desde edición');if(!old.exists())throw Error('Producto no encontrado en Firebase');const p={...old.data(),...cambios};if(!valid(p))throw Error('Datos inválidos');tx.update(ref,cambios)})},
  actualizar:refresh
 };

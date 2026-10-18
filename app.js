@@ -21,13 +21,15 @@ function productoRapidoDuplicado(ex){
 async function guardarRapido(){
   let codigo=$('qCodigo').value.trim(), nombre=$('qNombre').value.trim();
   let precioTxt=$('qPrecio').value.trim().replace(',','.'), cantTxt=$('qCantidad').value.trim();
-  let precio=precioTxt===''?0:Number(precioTxt), cantidad=cantTxt===''?0:parseInt(cantTxt,10);
+  let precio=precioTxt===''?0:Number(precioTxt), cantidad=cantTxt===''?0:Number(cantTxt);
+  const conteoNuevo=Boolean(window.abuelitaInventario?.enProceso&&cantTxt!=='');
   if(!codigo||!nombre){$('qMsg').textContent='Código y nombre son obligatorios.';$('qMsg').className='msg err';return}
   let existente=productos.find(p=>String(p.codigo)===codigo);
   if(existente){productoRapidoDuplicado(existente);return}
-  if(!(precio>=0)||!(cantidad>=0)){$('qMsg').textContent='Revise precio o stock.';$('qMsg').className='msg err';return}
-  if(window.abuelitaInventario?.enProceso && cantidad!==0){$('qMsg').textContent='Durante el inventario, registre el producto con stock 0. Después utilice «Registrar conteo físico» para ingresar la cantidad real.';$('qMsg').className='msg err';return}
+  if(!Number.isFinite(precio)||precio<0||!Number.isSafeInteger(cantidad)||cantidad<0){$('qMsg').textContent='Revise precio o stock.';$('qMsg').className='msg err';return}
+  if(conteoNuevo&&!window.abuelitaPuede?.('conteo')){$('qMsg').textContent='Tu cuenta no tiene permiso para registrar el conteo físico. Deja el stock en blanco o solicita autorización.';$('qMsg').className='msg err';return}
   const nuevo={codigo,nombre,precio,cantidad,creado:new Date().toISOString()};
+  if(conteoNuevo){const uid=window.abuelitaUidActual?.();if(!uid){$('qMsg').textContent='Espere el inicio de sesión.';return}nuevo.contadoEn=new Date().toISOString();nuevo.contadoPor=uid}
   if(!window.abuelitaProductosCloud){$('qMsg').textContent='Espere la conexión segura con Firebase.';return;}
   $('qGuardar').disabled=true;
   try{await window.abuelitaProductosCloud.crear(nuevo)}catch(e){$('qMsg').textContent='No se guardó en Firebase: '+e.message;$('qMsg').className='msg err';return}finally{$('qGuardar').disabled=false}
@@ -52,9 +54,21 @@ $('qNombre').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault
 function limpiarEdicionProducto(){
   $('buscar').value='';$('editOriginalCodigo').value='';['codigo','nombre','precio','cantidad'].forEach(id=>$(id).value='');$('editarProductoCard').classList.add('hidden');$('msg').textContent='';
 }
+function actualizarPermisosEdicionProducto(){
+ const puedeEditar=Boolean(window.abuelitaPuede?.('productos'));
+ const puedeContar=Boolean(window.abuelitaPuede?.('conteo'));
+ const inventario=Boolean(window.abuelitaInventario?.enProceso);
+ const p=productos.find(x=>String(x.codigo)===String($('editOriginalCodigo').value));
+ $('guardar').style.display=puedeEditar?'':'none';
+ for(const id of ['codigo','nombre','precio'])$(id).readOnly=!puedeEditar;
+ $('cantidad').readOnly=Boolean((inventario&&p?.contadoEn)||(!puedeEditar&&!(inventario&&puedeContar&&!p?.contadoEn)));
+ $('registrarConteo').style.display=inventario&&puedeContar&&p&&!p.contadoEn?'block':'none';
+}
+window.abuelitaActualizarPermisosProducto=actualizarPermisosEdicionProducto;
+window.abuelitaUidActual=()=>window.abuelitaAuthUid?.()||null;
 function seleccionarProducto(codigo){
   let p=productos.find(x=>String(x.codigo)===String(codigo));if(!p)return;
-  $('editOriginalCodigo').value=p.codigo;$('codigo').value=p.codigo;$('nombre').value=p.nombre;$('precio').value=Number(p.precio||0);$('cantidad').value=Number(p.cantidad||0);$('registrarConteo').style.display=window.abuelitaInventario?.enProceso&&!p.contadoEn?'block':'none';$('cantidad').readOnly=Boolean(window.abuelitaInventario?.enProceso&&p.contadoEn);$('editarProductoCard').classList.remove('hidden');$('buscar').value='';render();$('nombre').focus();
+  $('editOriginalCodigo').value=p.codigo;$('codigo').value=p.codigo;$('nombre').value=p.nombre;$('precio').value=Number(p.precio||0);$('cantidad').value=Number(p.cantidad||0);actualizarPermisosEdicionProducto();$('editarProductoCard').classList.remove('hidden');$('buscar').value='';render();$('nombre').focus();
 }
 window.seleccionarProducto=seleccionarProducto;
 function render(){
@@ -83,6 +97,7 @@ $('buscar').addEventListener('keydown',e=>{
   if(arr.length===1)seleccionarProducto(arr[0].codigo);
 });
 $('guardar').onclick=async()=>{
+  if(!window.abuelitaPuede?.('productos'))return msg('Tu cuenta no puede modificar productos.','err');
   let original=$('editOriginalCodigo').value,codigo=$('codigo').value.trim(),nombre=$('nombre').value.trim();let precio=Number(($('precio').value||'0').replace(',','.')),cantidad=parseInt($('cantidad').value||'0',10);
   if(!original)return msg('Primero seleccione un producto.','err');if(!codigo||!nombre||!Number.isFinite(precio)||precio<0||(!window.abuelitaInventario?.enProceso&&(!Number.isSafeInteger(cantidad)||cantidad<0)))return msg('Revise los datos del producto.','err');
   if(productos.some(p=>String(p.codigo)===codigo&&String(p.codigo)!==String(original)))return msg('Ese código pertenece a otro producto.','err');
@@ -95,6 +110,7 @@ $('guardar').onclick=async()=>{
   limpiarEdicionProducto();render();$('buscar').focus();
 };
 $('registrarConteo').onclick=async()=>{
+ if(!window.abuelitaPuede?.('conteo'))return msg('No tienes permiso para realizar conteos.','err');
  const codigo=$('editOriginalCodigo').value;
  if(!codigo)return msg('Seleccione primero un producto.','err');
  const p=productos.find(x=>String(x.codigo)===String(codigo));
