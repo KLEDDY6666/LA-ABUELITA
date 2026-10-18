@@ -1,6 +1,6 @@
 import {movimientoInventario} from './inventario-core.js';
 import {auth,db} from './firebase-auth.js';
-import {doc,getDoc,runTransaction,collection,query,orderBy,limit,onSnapshot} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import {doc,getDoc,runTransaction,collection,query,orderBy,onSnapshot} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 const MAX=4;
 async function verificar(){const u=auth.currentUser;if(!u)throw Error('Inicie sesión');const a=await getDoc(doc(db,'usuarios',u.uid));if(!a.exists()||a.data().estado!=='activo'||!['admin','usuario'].includes(a.data().rol))throw Error('La cuenta no tiene permiso para registrar ventas');if(a.data().rol!=='admin' && a.data().permisos?.ventas===false)throw Error('El administrador deshabilitó las ventas para esta cuenta');return u}
 window.abuelitaVentasCloud={async registrar(v){
@@ -35,7 +35,7 @@ async function cargarVendedores(ventas, sesion){
   try{
    const snap=await getDoc(doc(db,'usuarios',uid));
    const data=snap.exists()?snap.data():{};
-   const nombre=typeof data.nombre==='string'&&data.nombre.trim()?data.nombre.trim():'Usuario no identificado';
+   const nombre=[data.nombre,data.correo,data.email].find(x=>typeof x==='string'&&x.trim())?.trim() || (auth.currentUser?.uid===uid ? (auth.currentUser.displayName||auth.currentUser.email) : '') || 'Usuario sin nombre registrado';
    nombresVendedores.set(uid,nombre);
   }catch(e){console.warn('No se pudo consultar vendedor:',e.code||e.message);nombresVendedores.set(uid,'Vendedor no disponible')}
  }));
@@ -45,7 +45,7 @@ async function cargarVendedores(ventas, sesion){
 import {onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
 onAuthStateChanged(auth,u=>{
  sesionVendedores++;nombresVendedores.clear();if(stop){stop();stop=null}if(!u)return;const sesion=sesionVendedores;
- stop=onSnapshot(query(collection(db,'ventas'),orderBy('fecha','desc'),limit(300)),snap=>{
+ stop=onSnapshot(query(collection(db,'ventas'),orderBy('fecha','desc')),snap=>{
   if(snap.metadata.fromCache)return;
   const data=snap.docs.map(d=>d.data());
   if(typeof window.abuelitaAplicarVentasCompartidas==='function')window.abuelitaAplicarVentasCompartidas(data);

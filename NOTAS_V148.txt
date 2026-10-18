@@ -1,0 +1,7 @@
+V1.48 - Correccion de reglas de creditos
+
+Cambio: se permite actualizar clienteNombre en cuentas existentes solo cuando coincide con el nombre actual en clientes/{id}. Esto resuelve la incompatibilidad tras renombrar clientes.
+
+IMPORTANTE: La correccion requiere desplegar firestore.rules a Firebase; subir el ZIP a GitHub NO publica las reglas.
+
+No se ha probado con datos reales ni se ha borrado ninguna venta o credito. No borre datos ni limpie almacenamiento local antes de comprobar operaciones pendientes.

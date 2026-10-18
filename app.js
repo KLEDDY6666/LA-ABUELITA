@@ -1,6 +1,6 @@
 const OFFLINE_SALES_KEY='la_abuelita_ventas_pendientes_v128';
 const KEY='la_abuelita_productos_v1', DRAFT_KEY='la_abuelita_producto_borrador_v1', CART_KEY='la_abuelita_carrito_v1', SALES_KEY='la_abuelita_ventas_v1', CREDIT_PENDING='la_abuelita_credito_pendiente_v1', CLIENTS_KEY='la_abuelita_clientes_v1', CREDITS_KEY='la_abuelita_creditos_v1', PAYMENTS_KEY='la_abuelita_pagos_credito_v1', SUPPLIERS_KEY='la_abuelita_proveedores_v1', PURCHASES_KEY='la_abuelita_compras_v1', PURCHASE_CART_KEY='la_abuelita_carrito_compra_v1';
-const $=id=>document.getElementById(id); let productos=load(KEY,[]), carrito=load(CART_KEY,[]), ventas=load(SALES_KEY,[]), clientes=load(CLIENTS_KEY,[]), creditos=load(CREDITS_KEY,[]), pagos=load(PAYMENTS_KEY,[]), proveedores=load(SUPPLIERS_KEY,[]), compras=load(PURCHASES_KEY,[]), carritoCompra=load(PURCHASE_CART_KEY,[]); let clienteCreditoSeleccionado=null, vistaCreditos='pendientes',cuentasNube=[];
+const $=id=>document.getElementById(id); let productos=load(KEY,[]), carrito=load(CART_KEY,[]), ventas=[], clientes=load(CLIENTS_KEY,[]), creditos=load(CREDITS_KEY,[]), pagos=load(PAYMENTS_KEY,[]), proveedores=load(SUPPLIERS_KEY,[]), compras=[], carritoCompra=load(PURCHASE_CART_KEY,[]); let clienteCreditoSeleccionado=null, vistaCreditos='pendientes',cuentasNube=[];
 function load(k,d){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(d))}catch(e){return d}}
 function store(k,v){localStorage.setItem(k,JSON.stringify(v))}
 function save(){store(KEY,productos);render()}
@@ -478,9 +478,11 @@ const nombresVendedoresCompartidos = Object.create(null);
 window.abuelitaAplicarNombresVendedores = function(nombres){Object.assign(nombresVendedoresCompartidos,nombres);if(!$('movimientos').classList.contains('hidden'))renderMovimientos()};
 function nombreVendedor(v){const uid=String(v.registradoPor||'');return uid?(nombresVendedoresCompartidos[uid]||'Consultando vendedor…'):'Sin identificar (venta anterior)'}
 window.abuelitaAplicarComprasCompartidas=function(lista){
- const locales=load(PURCHASES_KEY,[]).filter(c=>!c.origenFirebase);
- compras=[...locales,...lista.map(c=>({...c,origenFirebase:true}))];
- if($('movTipo')?.value==='compras')renderMovimientos();
+ if(!Array.isArray(lista))return;
+ const ids=new Set();
+ compras=lista.filter(c=>c&&typeof c.id==='string'&&!ids.has(c.id)&&ids.add(c.id));
+ store(PURCHASES_KEY,compras);
+ if(!$('movimientos').classList.contains('hidden')&&$('movTipo')?.value==='compras')renderMovimientos();
 };
 function renderMovimientos(){if(!$('listaMovimientos'))return;let tipo=$('movTipo').value,desde=$('movDesde').value,hasta=$('movHasta').value,arr=tipo==='ventas'?ventas:compras;arr=arr.filter(x=>{let d=x.fecha.slice(0,10);return(!desde||d>=desde)&&(!hasta||d<=hasta)}).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));let total=tipo==='ventas'?arr.reduce((s,x)=>s+Number(x.total||0),0):arr.length;$('movResumen').innerHTML=tipo==='ventas'?`<b>${arr.length}</b> venta(s) · Total S/ <b>${total.toFixed(2)}</b>`:`<b>${arr.length}</b> compra(s) registrada(s)`;resumenVentasV136(arr);$('listaMovimientos').innerHTML=arr.length?arr.map(x=>`<div class='movement'><div><b>${fechaHora(x.fecha)}</b><div>${tipo==='ventas'?(x.clienteNombre?esc(x.clienteNombre):'Sin cliente'):`Proveedor: ${esc(x.proveedorNombre||'')}`}</div>${tipo==='ventas'?`<div class='movementSeller'>👤 Vendido por: <b>${esc(nombreVendedor(x))}</b></div>`:''}<div class='movementItems'>${(x.items||[]).map(i=>`${esc(i.nombre)} × ${i.cantidad}`).join(' · ')}</div></div><div class='movementAmount'>${tipo==='ventas'?`${esc(x.medio)}<br>S/ ${Number(x.total||0).toFixed(2)}`:`${(x.items||[]).reduce((s,i)=>s+Number(i.cantidad||0),0)} unid.`}</div></div>`).join(''):`<p class='muted'>No hay movimientos para el periodo seleccionado.</p>`}
 
@@ -559,4 +561,13 @@ window.abuelitaAplicarCatalogo=function(lista){
 };
 
 // Ventas confirmadas desde cualquier cuenta: evita duplicados por ID y conserva la cola offline local.
-window.abuelitaAplicarVentasCompartidas=function(remotas){const mapa=new Map(ventas.map(v=>[v.id,v]));for(const v of remotas)mapa.set(v.id,v);ventas=[...mapa.values()];store(SALES_KEY,ventas);if(!$('movimientos').classList.contains('hidden'))renderMovimientos()};
+// La colección remota es la fuente de verdad de ventas confirmadas.
+// Las ventas sin conexión permanecen únicamente en OFFLINE_SALES_KEY y nunca
+// se incorporan a este historial hasta que Firebase confirme su registro.
+window.abuelitaAplicarVentasCompartidas=function(remotas){
+ if(!Array.isArray(remotas))return;
+ const ids=new Set();
+ ventas=remotas.filter(v=>v&&typeof v.id==='string'&&!ids.has(v.id)&&ids.add(v.id));
+ store(SALES_KEY,ventas);
+ if(!$('movimientos').classList.contains('hidden'))renderMovimientos();
+};

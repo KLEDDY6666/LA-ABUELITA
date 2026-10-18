@@ -269,7 +269,8 @@ function cuentaPago(n,ant){
    allow create: if permiso('creditos') && cuentaCampos(request.resource.data,clienteId)
     && exists(clienteRef(clienteId)) && cuentaCreditoNuevo(request.resource.data);
    allow update: if permiso('creditos') && cuentaCampos(request.resource.data,clienteId)
-    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalCent','pagadoCent','saldoCent','ultimaOperacionId','ultimaOperacionTipo'])
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clienteNombre','totalCent','pagadoCent','saldoCent','ultimaOperacionId','ultimaOperacionTipo'])
+    && request.resource.data.clienteNombre == get(clienteRef(clienteId)).data.nombre
     && (cuentaCredito(request.resource.data,resource.data) || cuentaPago(request.resource.data,resource.data));
    allow delete: if false;
   }

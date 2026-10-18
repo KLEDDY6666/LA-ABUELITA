@@ -1,4 +1,4 @@
-const C='la-abuelita-v147-homenaje-20261018';
+const C='la-abuelita-v148-historial-ventas-compras-20261018b';
 const A=['./','index.html','styles.css','app.js','firebase-auth.js','firebase-productos.js','firebase-catalogo.js','firebase-ventas.js','firebase-permisos.js','firebase-compras.js','firebase-proveedores.js','firebase-respaldo.js','firebase-creditos.js','firebase-homenaje.js','homenaje-imagen.js','firebase-inventario.js','inventario-core.js','inventario-modelo.js','inventario-auditoria.js','manifest.json','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(A)))});
 self.addEventListener('activate',e=>{e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==C).map(k=>caches.delete(k))))]))});
