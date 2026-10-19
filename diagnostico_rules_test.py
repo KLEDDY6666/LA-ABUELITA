@@ -174,7 +174,8 @@ service cloud.firestore {
  match /databases/{database}/documents {
   match /__diagnostico__/formato {
    allow create: if request.auth.uid == 'USUARIO_ACTUAL'
-    && request.time == timestamp.value(request.resource.data.fecha)
+    && request.time == (request.resource.data.fecha is timestamp
+         ? request.resource.data.fecha : timestamp.value(request.resource.data.fecha))
     && request.resource.data.clienteId is int
     && request.resource.data.clienteId == 1792349707857
     && request.resource.data.items[0].precio == 1.3
@@ -193,6 +194,36 @@ service cloud.firestore {
     return {"source": {"files": [{"name": "calibracion.rules", "content": source}]},
             "testSuite": {"testCases": [case("__diagnostico__/formato", "create", uid,
                                             mocks_for(before, after), sale)]}}
+
+
+def type_fidelity():
+    """No adaptar las reglas reales a una conversión artificial del servicio :test.
+
+    Las entradas originales son stringValue. La calibración tolera timestamp
+    para comprobar los mocks, pero las pruebas principales necesitan conservar
+    los tipos que realmente almacenó Firestore. Cada caso aísla un campo.
+    """
+    before, after, writes, uid = fixture()
+    sale_path = writes[0]["ruta"]
+    sale = after[sale_path]
+    checks = [
+        ("STRING request.resource.data.fecha", "fecha_solicitud",
+         "request.resource.data.fecha is string"),
+        ("STRING get(inventario).data.iniciadoEn", "inicio_inventario",
+         "get(/databases/$(database)/documents/configuracion/inventarioInicial).data.iniciadoEn is string"),
+        ("STRING getAfter(venta).data.fecha", "fecha_venta_after",
+         "getAfter(/databases/$(database)/documents/" + sale_path + ").data.fecha is string"),
+    ]
+    blocks = []
+    cases = []
+    labels = []
+    for label, path, expression in checks:
+        blocks.append("  match /__tipos__/" + path + " {\n   allow create: if " + expression + ";\n  }")
+        labels.append(label)
+        cases.append(case("__tipos__/" + path, "create", uid, mocks_for(before, after), sale))
+    source = "rules_version = '2';\nservice cloud.firestore {\n match /databases/{database}/documents {\n" + "\n".join(blocks) + "\n }\n}\n"
+    return labels, {"source": {"files": [{"name": "tipos-simulados.rules", "content": source}]},
+                    "testSuite": {"testCases": cases}}
 
 
 def save(directory, name, value):
@@ -258,12 +289,17 @@ def main():
     check = calibration()
     validate_body(body)
     validate_body(check)
+    type_labels, type_check = type_fidelity()
+    validate_body(type_check)
     if args.autoverificar:
         before, after, writes, uid = fixture()
         assert after[writes[0]["ruta"]]["totalCent"] == 130
         assert after[writes[1]["ruta"]]["saldoCent"] == 130
         assert before[writes[1]["ruta"]] is None
         assert len(labels) == 8 and "source" not in body
+        assert len(type_labels) == 3
+        assert "is timestamp" in check["source"]["files"][0]["content"]
+        assert all(" is string" in f["content"] for f in type_check["source"]["files"])
         assert isinstance(after[writes[0]["ruta"]]["clienteId"], int)
         print("OK: JSON incorporado, 2 creaciones + 6 lecturas, mocks antes/después y contrato REST estructural.")
         print("No se llamó a la API. La compatibilidad del contexto se comprobará en la calibración remota.")
@@ -296,6 +332,18 @@ def main():
         print("\nCALIBRACIÓN DEL CONTEXTO Y MOCKS (fuente de prueba sin publicar)")
         if not report(calibrated, ["FORMATO"], {"calibracion.rules": check["source"]["files"][0]["content"]}):
             raise RuntimeError("Calibración no satisfactoria. No interpretar esto como rechazo de la venta; revisar el formato o soporte de mocks.")
+        save(directory, "tipos-solicitud.json", type_check)
+        type_result = api.call("POST", f"projects/{PROJECT}:test", type_check)
+        save(directory, "tipos-respuesta.json", type_result)
+        print("\nFIDELIDAD DE TIPOS: las fechas originales del JSON son stringValue")
+        if not report(type_result, type_labels,
+                      {"tipos-simulados.rules": type_check["source"]["files"][0]["content"]}):
+            raise RuntimeError(
+                "La simulación no conserva los tipos originales o no pudo verificarlos. "
+                "No se ejecutarán las pruebas principales con tipos incompatibles: "
+                "fechaIso exige string y timestamp.value no acepta timestamp. "
+                "Revisar tipos-respuesta.json; este resultado NO identifica la causa en producción. "
+                "No se adaptaron ni publicaron las reglas reales.")
         save(directory, "solicitud.json", body)
         save(directory, "casos.json", labels)
         response = api.call("POST", ruleset + ":test", body)
